@@ -30,6 +30,12 @@ interface UrlStats {
   recent_clicks: ClickEvent[];
 }
 
+interface ShortenFormValues {
+  url: string;
+  custom_alias?: string;
+  expires_in_hours?: number;
+}
+
 function App() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -60,7 +66,7 @@ function App() {
     fetchRecentLinks();
   }, []);
 
-  const onFinish = async (values: any) => {
+  const onFinish = async (values: ShortenFormValues) => {
     setLoading(true);
     setResult(null);
     try {
@@ -83,8 +89,9 @@ function App() {
       message.success('URL shortened successfully!');
       fetchRecentLinks();
       form.resetFields();
-    } catch (error: any) {
-      message.error(error.message || 'An error occurred');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -154,7 +161,7 @@ function App() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: ShortenedURL) => (
+      render: (_value: unknown, record: ShortenedURL) => (
         <Space size="middle">
           <Button 
             type="text" 
