@@ -21,7 +21,7 @@ Base.metadata.create_all(bind=engine)
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
-    title="URL Shortener",
+    title="tinylnk",
     description="A fast and modern URL shortener API",
     version="1.0.0",
 )
@@ -37,8 +37,8 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 # Mount static files
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
 
 # ─── Routes ──────────────────────────────────────────────
@@ -130,7 +130,7 @@ async def redirect_to_url(
 ):
     """Redirect to the original URL and record the click."""
     # Skip API and static routes
-    if short_code in ("api", "static", "docs", "openapi.json", "favicon.ico"):
+    if short_code in ("api", "assets", "docs", "openapi.json", "favicon.ico"):
         raise HTTPException(status_code=404, detail="Not found.")
 
     url = crud.get_url_by_code(db, short_code)
