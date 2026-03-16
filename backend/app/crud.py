@@ -95,4 +95,9 @@ def is_url_expired(url: models.URL) -> bool:
     """Check if a URL has expired."""
     if url.expires_at is None:
         return False
-    return datetime.now(timezone.utc) > url.expires_at
+
+    expires_at = url.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    return datetime.now(timezone.utc) > expires_at
