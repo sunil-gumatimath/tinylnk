@@ -73,7 +73,7 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
 
     return {
         "original_url": url.original_url,
-        "short_code": url.short_code,
+        "short_code": url.custom_alias or url.short_code,
         "created_at": url.created_at,
         "expires_at": url.expires_at,
         "total_clicks": url.click_count,
