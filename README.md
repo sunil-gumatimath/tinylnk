@@ -26,7 +26,7 @@ It lets you:
 - **ORM:** SQLAlchemy
 - **Server:** Uvicorn
 - **Rate limiting:** SlowAPI
-- **Frontend:** HTML, CSS, JavaScript
+- **Frontend:** React, TypeScript, Vite, Ant Design (built with Bun)
 
 ## Project Structure
 
@@ -42,10 +42,10 @@ It lets you:
 │   │   ├── schemas.py
 │   │   └── utils.py
 │   └── requirements.txt
-├── frontend/
-│   ├── index.html
-│   ├── script.js
-│   └── style.css
+├── frontend/          # React TS application
+│   ├── src/           # Components and styles
+│   ├── package.json   # Dependencies
+│   └── vite.config.ts # Vite configuration
 ├── .gitignore
 └── README.md
 ```
@@ -220,14 +220,14 @@ Tables are created on app startup using:
 
 ## Frontend
 
-The included frontend provides:
+The frontend is a modern React + TypeScript application built with Vite and Ant Design. It provides:
 - URL shortening form
 - advanced options for alias and expiration
 - recent links table
 - stats modal for analytics
 - copy-to-clipboard support
 
-The root route `/` serves `frontend/index.html`, and static assets are mounted under `/static`.
+The FastAPI backend serves the compiled production build from `frontend/dist`. The root route `/` serves `index.html`, and static assets are mounted under `/assets`. To develop the frontend, run `bun run dev` inside the `frontend` directory.
 
 ## Development Notes
 
