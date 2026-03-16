@@ -1,6 +1,7 @@
-from pydantic import BaseModel, HttpUrl
 from datetime import datetime
 from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class URLCreate(BaseModel):
@@ -41,4 +42,4 @@ class URLStats(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
     total_clicks: int
-    recent_clicks: list[ClickEventResponse] = []
+    recent_clicks: list[ClickEventResponse] = Field(default_factory=list)
