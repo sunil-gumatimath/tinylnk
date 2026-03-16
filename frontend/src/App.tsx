@@ -115,9 +115,13 @@ function App() {
 
   const currentHost = window.location.origin;
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    message.success('Copied to clipboard!');
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      message.success('Copied to clipboard!');
+    } catch {
+      message.error('Could not copy. Please copy manually.');
+    }
   };
 
   const showStats = async (shortCode: string) => {
