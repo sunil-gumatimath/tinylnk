@@ -54,6 +54,7 @@ It lets you:
 
 - **Python 3.10+**
 - `pip`
+- **Bun** (for frontend dependencies and build)
 
 > Python 3.10+ is recommended because the codebase uses modern type hints such as `list[...]` and `| None`.
 
@@ -69,9 +70,14 @@ pip install -r backend/requirements.txt
 
 ## Run Locally
 
-From the project root, start the FastAPI development server:
+Build the frontend once, then start the backend server:
 
 ```bash
+cd frontend
+bun install
+bun run build
+
+cd ..
 uvicorn backend.app.main:app --reload
 ```
 
