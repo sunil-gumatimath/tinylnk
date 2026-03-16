@@ -37,7 +37,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 # Mount static files
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
