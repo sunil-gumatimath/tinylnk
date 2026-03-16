@@ -38,7 +38,10 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # Mount static files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
-app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
+
+if os.path.isdir(ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 # ─── Routes ──────────────────────────────────────────────
@@ -48,6 +51,15 @@ app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), 
 async def serve_frontend():
     """Serve the frontend HTML page."""
     index_path = os.path.join(STATIC_DIR, "index.html")
+    if not os.path.isfile(index_path):
+        return HTMLResponse(
+            content=(
+                "<h2>Frontend build not found</h2>"
+                "<p>Run <code>bun run build</code> inside <code>frontend/</code> "
+                "to generate <code>frontend/dist</code>.</p>"
+            ),
+            status_code=503,
+        )
     return FileResponse(index_path)
 
 
