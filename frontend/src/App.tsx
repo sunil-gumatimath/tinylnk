@@ -51,12 +51,15 @@ function App() {
     setTableLoading(true);
     try {
       const res = await fetch('/api/recent');
-      if (res.ok) {
-        const data = await res.json();
-        setRecentLinks(data);
+      if (!res.ok) {
+        message.error('Could not load recent links');
+        return;
       }
+      const data = await res.json();
+      setRecentLinks(data);
     } catch (error) {
-      console.error("Failed to fetch recent links", error);
+      console.error('Failed to fetch recent links', error);
+      message.error('Could not load recent links');
     } finally {
       setTableLoading(false);
     }
