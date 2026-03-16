@@ -66,6 +66,22 @@ function App() {
     fetchRecentLinks();
   }, []);
 
+  const validateUrlInput = async (_rule: unknown, value: string) => {
+    if (!value) return Promise.resolve();
+
+    const normalized = value.startsWith('http://') || value.startsWith('https://')
+      ? value
+      : `https://${value}`;
+
+    try {
+      // eslint-disable-next-line no-new
+      new URL(normalized);
+      return Promise.resolve();
+    } catch {
+      return Promise.reject(new Error('Must be a valid URL or domain'));
+    }
+  };
+
   const onFinish = async (values: ShortenFormValues) => {
     setLoading(true);
     setResult(null);
@@ -200,7 +216,10 @@ function App() {
             <Form.Item
               name="url"
               label={<span style={{ color: 'var(--text-secondary)' }}>Paste your long URL</span>}
-              rules={[{ required: true, message: 'Please input a URL!' }, { type: 'url', message: 'Must be a valid URL!' }]}
+              rules={[
+                { required: true, message: 'Please input a URL!' },
+                { validator: validateUrlInput },
+              ]}
             >
               <div style={{ display: 'flex', gap: '8px' }}>
                 <Input 
