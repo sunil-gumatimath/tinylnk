@@ -1,27 +1,32 @@
-# tinylnk - URL Shortener
+# tinylnk
 
-A fast, modern, and lightweight URL shortener API built with FastAPI. It allows you to shorten long URLs, create custom aliases, track click analytics, and set expiration dates for your links.
+A modern URL shortener built with **FastAPI**, **SQLAlchemy**, **SQLite**, and a lightweight **vanilla frontend**.
+
+It lets you:
+- shorten long URLs
+- create custom aliases
+- set link expiration times
+- track click analytics
+- use a simple web UI or API
 
 ## Features
 
-- **URL Shortening:** Convert long URLs into compact, shareable links.
-- **Custom Aliases:** Choose your own recognizable short link names (e.g., `tinylnk/my-custom-name`).
-- **Click Analytics:** Accurately track link visits, including referrer, user agent, and IP address.
-- **Link Expiration:** Set a date and time for when your short links should automatically expire.
-- **Rate Limiting:** Built-in protection against abuse using `slowapi`.
-- **Frontend Included:** A simple and clean web interface served directly from the application.
+- Fast URL shortening API
+- Custom short aliases
+- Expiring links
+- Click tracking and recent analytics
+- Built-in rate limiting with `slowapi`
+- Frontend served directly by the FastAPI app
+- SQLite-based local persistence
 
 ## Tech Stack
 
-- **Framework:** FastAPI
-- **Database:** SQLite (Default) with SQLAlchemy ORM
+- **Backend:** FastAPI
+- **Database:** SQLite
+- **ORM:** SQLAlchemy
 - **Server:** Uvicorn
-- **Rate Limiting:** SlowAPI
-- **Frontend:** Vanilla HTML, CSS, JavaScript
-
-## Prerequisites
-
-- Python 3.8+
+- **Rate limiting:** SlowAPI
+- **Frontend:** HTML, CSS, JavaScript
 
 ## Project Structure
 
@@ -30,51 +35,223 @@ A fast, modern, and lightweight URL shortener API built with FastAPI. It allows 
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── crud.py         # Database operations
-│   │   ├── database.py     # Database setup
-│   │   ├── main.py         # FastAPI application and routes
-│   │   ├── models.py       # SQLAlchemy database models
-│   │   ├── schemas.py      # Pydantic validation schemas
-│   │   └── utils.py        # Helper utilities
-│   └── requirements.txt    # Python dependencies
+│   │   ├── crud.py
+│   │   ├── database.py
+│   │   ├── main.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   └── utils.py
+│   └── requirements.txt
 ├── frontend/
-│   ├── index.html          # Main HTML page
-│   ├── script.js           # Frontend logic
-│   └── style.css           # Styling
-├── README.md
-└── urlshortener.db         # SQLite database
+│   ├── index.html
+│   ├── script.js
+│   └── style.css
+├── .gitignore
+└── README.md
 ```
+
+## Requirements
+
+- **Python 3.10+**
+- `pip`
+
+> Python 3.10+ is recommended because the codebase uses modern type hints such as `list[...]` and `| None`.
 
 ## Installation
 
-1. Clone or download this repository.
-2. Navigate to the project directory:
-   ```bash
-   cd URL-shorter
-   ```
-3. Install the dependencies:
-   ```bash
-   pip install -r backend/requirements.txt
-   ```
+Clone the repository and install dependencies:
 
-## Running the Application
+```bash
+git clone https://github.com/sunil-gumatimath/tinylnk.git
+cd tinylnk
+pip install -r backend/requirements.txt
+```
 
-Start the development server with Uvicorn from the project root:
+## Run Locally
+
+From the project root, start the FastAPI development server:
 
 ```bash
 uvicorn backend.app.main:app --reload
 ```
 
-The application will be accessible at:
-- **Frontend / UI:** `http://127.0.0.1:8000/`
-- **Interactive API Docs (Swagger UI):** `http://127.0.0.1:8000/docs`
-- **Alternative API Docs (ReDoc):** `http://127.0.0.1:8000/redoc`
+The app will be available at:
+
+- **App UI:** `http://127.0.0.1:8000/`
+- **Swagger docs:** `http://127.0.0.1:8000/docs`
+- **ReDoc:** `http://127.0.0.1:8000/redoc`
+
+## How It Works
+
+- The frontend is served from the `frontend/` folder.
+- FastAPI exposes API routes under `/api/...`.
+- Short codes are generated using **Base62 encoding**.
+- Data is stored in a local SQLite database file named `urlshortener.db` in the project root.
+- Every redirect can record click metadata such as:
+  - referrer
+  - user agent
+  - IP address
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-| ------ | -------- | ----------- |
-| `POST` | `/api/shorten` | Create a short URL. Accepts original URL, custom alias, and expiration. |
-| `GET` | `/api/recent` | Fetch a list of recently created shortened URLs. |
-| `GET` | `/api/stats/{short_code}` | Retrieve click analytics for a specific short URL. |
-| `GET` | `/{short_code}` | Redirects to the original URL and records the click event. |
+### `POST /api/shorten`
+Create a shortened URL.
+
+#### Request body
+
+```json
+{
+  "url": "https://example.com/some/very/long/path",
+  "custom_alias": "my-link",
+  "expires_in_hours": 24
+}
+```
+
+#### Notes
+
+- `custom_alias` is optional
+- `expires_in_hours` is optional
+- if the URL does not start with `http://` or `https://`, the backend prefixes it with `https://`
+- aliases must be **3 to 50 characters** and may contain:
+  - letters
+  - numbers
+  - hyphens (`-`)
+  - underscores (`_`)
+
+#### Example response
+
+```json
+{
+  "id": 1,
+  "original_url": "https://example.com/some/very/long/path",
+  "short_code": "my-link",
+  "short_url": "http://127.0.0.1:8000/my-link",
+  "created_at": "2026-03-16T12:00:00Z",
+  "expires_at": "2026-03-17T12:00:00Z",
+  "click_count": 0
+}
+```
+
+---
+
+### `GET /api/recent`
+Returns the most recently created shortened URLs.
+
+#### Example response
+
+```json
+[
+  {
+    "id": 1,
+    "original_url": "https://example.com",
+    "short_code": "g9",
+    "short_url": "http://127.0.0.1:8000/g9",
+    "created_at": "2026-03-16T12:00:00Z",
+    "expires_at": null,
+    "click_count": 3
+  }
+]
+```
+
+---
+
+### `GET /api/stats/{short_code}`
+Returns analytics for a given short code or custom alias.
+
+#### Example response
+
+```json
+{
+  "original_url": "https://example.com",
+  "short_code": "g9",
+  "created_at": "2026-03-16T12:00:00Z",
+  "expires_at": null,
+  "total_clicks": 3,
+  "recent_clicks": [
+    {
+      "clicked_at": "2026-03-16T12:10:00Z",
+      "referrer": "https://google.com",
+      "user_agent": "Mozilla/5.0"
+    }
+  ]
+}
+```
+
+---
+
+### `GET /{short_code}`
+Redirects to the original URL and records the click.
+
+#### Possible responses
+
+- `307` redirect on success
+- `404` if the short code does not exist
+- `410` if the link has expired
+
+## Rate Limiting
+
+The `POST /api/shorten` endpoint is rate limited to:
+
+```text
+30 requests per minute
+```
+
+If the limit is exceeded, the API returns:
+
+```json
+{
+  "detail": "Too many requests. Please slow down."
+}
+```
+
+## Database
+
+The app uses SQLite by default.
+
+The database file is created automatically as:
+
+```text
+urlshortener.db
+```
+
+Tables are created on app startup using:
+- `urls`
+- `click_events`
+
+## Frontend
+
+The included frontend provides:
+- URL shortening form
+- advanced options for alias and expiration
+- recent links table
+- stats modal for analytics
+- copy-to-clipboard support
+
+The root route `/` serves `frontend/index.html`, and static assets are mounted under `/static`.
+
+## Development Notes
+
+- Backend entry point: `backend/app/main.py`
+- Database config: `backend/app/database.py`
+- URL creation and analytics logic: `backend/app/crud.py`
+- Base62 and alias helpers: `backend/app/utils.py`
+
+## Example Development Command
+
+```bash
+uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+## Future Improvements
+
+Possible next steps for the project:
+- add tests
+- add Docker support
+- add environment-based configuration
+- support PostgreSQL
+- add authentication for link management
+- add deletion and editing for short links
+
+## License
+
+This project is open source and available under the **MIT License**.
