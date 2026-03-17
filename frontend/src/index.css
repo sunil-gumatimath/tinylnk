@@ -47,7 +47,8 @@ body {
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.5;
-  animation: float 20s infinite ease-in-out alternate;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .orb-1 {
