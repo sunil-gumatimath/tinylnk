@@ -35,6 +35,11 @@ class ClickEventResponse(BaseModel):
         from_attributes = True
 
 
+class StatsItem(BaseModel):
+    name: str
+    value: int
+
+
 class URLStats(BaseModel):
     """Schema for URL analytics/stats."""
     original_url: str
@@ -42,4 +47,7 @@ class URLStats(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
     total_clicks: int
+    clicks_by_date: list[StatsItem] = Field(default_factory=list)
+    browser_stats: list[StatsItem] = Field(default_factory=list)
+    os_stats: list[StatsItem] = Field(default_factory=list)
     recent_clicks: list[ClickEventResponse] = Field(default_factory=list)
