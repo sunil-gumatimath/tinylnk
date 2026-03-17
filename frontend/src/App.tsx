@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Layout, Typography, Form, Input, InputNumber, Button, Table, message, Modal, Space } from 'antd';
 import { Scissors, Copy, RotateCw, BarChart2 } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-const { Content, Footer } = Layout;
+const { Content } = Layout;
 const { Title } = Typography;
+
+const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
 interface ShortenedURL {
   id: number;
@@ -21,12 +24,20 @@ interface ClickEvent {
   user_agent: string | null;
 }
 
+interface StatsItem {
+  name: string;
+  value: number;
+}
+
 interface UrlStats {
   original_url: string;
   short_code: string;
   created_at: string;
   expires_at: string | null;
   total_clicks: number;
+  clicks_by_date: StatsItem[];
+  browser_stats: StatsItem[];
+  os_stats: StatsItem[];
   recent_clicks: ClickEvent[];
 }
 
@@ -94,8 +105,8 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: values.url,
-          custom_alias: values.custom_alias || undefined,
-          expires_in_hours: values.expires_in_hours || undefined,
+          custom_alias: values.custom_alias ? values.custom_alias.trim() : null,
+          expires_in_hours: values.expires_in_hours ? Number(values.expires_in_hours) : null,
         }),
       });
       
@@ -117,6 +128,9 @@ function App() {
   };
 
   const currentHost = window.location.origin;
+
+  const getShortUrl = (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) =>
+    record.short_url || `${currentHost}/${record.short_code}`;
 
   const handleCopy = async (text: string) => {
     try {
@@ -152,9 +166,9 @@ function App() {
       title: 'Short URL',
       dataIndex: 'short_code',
       key: 'short_code',
-      render: (text: string) => (
-        <a href={`${currentHost}/${text}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
-          {text}
+      render: (_text: string, record: ShortenedURL) => (
+        <a href={getShortUrl(record)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+          {record.short_code}
         </a>
       ),
     },
@@ -189,7 +203,7 @@ function App() {
           <Button 
             type="text" 
             icon={<Copy size={16} />} 
-            onClick={() => handleCopy(`${currentHost}/${record.short_code}`)}
+            onClick={() => handleCopy(getShortUrl(record))}
           />
           <Button 
             type="text" 
@@ -220,59 +234,59 @@ function App() {
 
         <section className="shorten-card glass">
           <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Form.Item
-              name="url"
-              label={<span style={{ color: 'var(--text-secondary)' }}>Paste your long URL</span>}
-              rules={[
-                { required: true, message: 'Please input a URL!' },
-                { validator: validateUrlInput },
-              ]}
-            >
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <Input 
-                  size="large" 
-                  placeholder="https://example.com/your-very-long-url-goes-here" 
-                  prefix={<Scissors size={18} style={{ color: 'var(--text-secondary)' }}/>} 
-                  style={{ flex: 1 }}
+            <div style={{ marginBottom: '8px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Paste your long URL</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+              <Form.Item
+                name="url"
+                rules={[
+                  { required: true, message: 'Please input a URL!' },
+                  { validator: validateUrlInput },
+                ]}
+                style={{ flex: 1, margin: 0 }}
+              >
+                <Input
+                  size="large"
+                  placeholder="https://example.com/your-very-long-url-goes-here"
+                  prefix={<Scissors size={18} style={{ color: 'var(--text-secondary)' }}/>}
                 />
-                <Button type="primary" htmlType="submit" size="large" loading={loading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  Shorten
-                </Button>
-              </div>
-            </Form.Item>
-
-            <div style={{ marginBottom: '16px' }}>
-              <Button type="link" onClick={() => setShowAdvanced(!showAdvanced)} style={{ padding: 0, color: 'var(--text-secondary)' }}>
-                {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+              </Form.Item>
+              <Button type="primary" htmlType="submit" size="large" loading={loading} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Shorten
               </Button>
             </div>
 
-            {showAdvanced && (
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                <Form.Item
-                  name="custom_alias"
-                  label={<span style={{ color: 'var(--text-secondary)' }}>Custom Alias (optional)</span>}
-                  style={{ flex: 1, minWidth: '200px' }}
-                >
-                  <Input placeholder="my-custom-link" />
-                </Form.Item>
-                <Form.Item
-                  name="expires_in_hours"
-                  label={<span style={{ color: 'var(--text-secondary)' }}>Expires in (hours, optional)</span>}
-                  style={{ flex: 1, minWidth: '200px' }}
-                >
-                  <InputNumber style={{ width: '100%' }} placeholder="e.g. 24" min={1} max={8760} />
-                </Form.Item>
-              </div>
-            )}
+            <div style={{ marginBottom: '16px', marginTop: '8px' }}>
+              <button type="button" onClick={(e) => { e.preventDefault(); setShowAdvanced(!showAdvanced); }} style={{ background: 'transparent', border: 'none', padding: 0, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '14px' }}>
+                {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+              </button>
+            </div>
+
+            <div style={{ display: showAdvanced ? 'flex' : 'none', gap: '16px', flexWrap: 'wrap' }}>
+              <Form.Item
+                name="custom_alias"
+                label={<span style={{ color: 'var(--text-secondary)' }}>Custom Alias (optional)</span>}
+                style={{ flex: 1, minWidth: '200px' }}
+              >
+                <Input placeholder="my-custom-link" />
+              </Form.Item>
+              <Form.Item
+                name="expires_in_hours"
+                label={<span style={{ color: 'var(--text-secondary)' }}>Expires in (hours, optional)</span>}
+                style={{ flex: 1, minWidth: '200px' }}
+              >
+                <InputNumber style={{ width: '100%' }} placeholder="e.g. 24" min={1} max={8760} />
+              </Form.Item>
+            </div>
           </Form>
 
           {result && (
             <div className="glass" style={{ marginTop: '24px', padding: '16px', borderRadius: '8px', border: '1px solid var(--success)', background: 'rgba(16, 185, 129, 0.1)' }}>
               <div style={{ color: 'var(--success)', marginBottom: '8px', fontWeight: 600 }}>URL Shortened Successfully!</div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <Input value={`${currentHost}/${result.short_code}`} readOnly style={{ flex: 1, color: 'var(--accent)' }} />
-                <Button icon={<Copy size={16} />} onClick={() => handleCopy(`${currentHost}/${result.short_code}`)}>Copy</Button>
+                <Input value={getShortUrl(result)} readOnly style={{ flex: 1, color: 'var(--accent)' }} />
+                <Button icon={<Copy size={16} />} onClick={() => handleCopy(getShortUrl(result))}>Copy</Button>
               </div>
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {result.original_url}
@@ -299,10 +313,6 @@ function App() {
         </section>
 
       </Content>
-      
-      <Footer className="footer" style={{ background: 'transparent' }}>
-        <p>Built with <span className="heart">♥</span> using FastAPI, React & Ant Design</p>
-      </Footer>
 
       <Modal
         title={
@@ -336,6 +346,59 @@ function App() {
                   <div>{new Date(currentStats.created_at).toLocaleDateString()}</div>
                 </div>
               </div>
+            </div>
+
+            {currentStats.clicks_by_date && currentStats.clicks_by_date.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <Title level={5} style={{ color: 'var(--text-primary)' }}>Clicks Over Time</Title>
+                <div style={{ height: 200, width: '100%', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={currentStats.clicks_by_date}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                      <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <RechartsTooltip
+                        contentStyle={{ background: '#1f2937', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'var(--text-primary)' }}
+                        itemStyle={{ color: 'var(--accent)' }}
+                      />
+                      <Line type="monotone" dataKey="value" name="Clicks" stroke="var(--accent)" strokeWidth={2} dot={{ r: 4, fill: 'var(--accent)' }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              {currentStats.browser_stats && currentStats.browser_stats.length > 0 && (
+                <div style={{ flex: '1 1 200px' }}>
+                  <Title level={5} style={{ color: 'var(--text-primary)' }}>Browsers</Title>
+                  <div style={{ height: 200, background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={currentStats.browser_stats} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={2}>
+                          {currentStats.browser_stats.map((_entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                        </Pie>
+                        <RechartsTooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '8px' }} itemStyle={{ color: 'var(--text-primary)' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+              {currentStats.os_stats && currentStats.os_stats.length > 0 && (
+                <div style={{ flex: '1 1 200px' }}>
+                  <Title level={5} style={{ color: 'var(--text-primary)' }}>Operating Systems</Title>
+                  <div style={{ height: 200, background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={currentStats.os_stats} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={2}>
+                          {currentStats.os_stats.map((_entry, index) => <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />)}
+                        </Pie>
+                        <RechartsTooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '8px' }} itemStyle={{ color: 'var(--text-primary)' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Title level={5} style={{ color: 'var(--text-primary)', marginTop: '24px' }}>Recent Click Activity</Title>
