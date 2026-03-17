@@ -2,6 +2,8 @@
 
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from collections import Counter
+from user_agents import parse
 
 from . import models, schemas
 from .utils import encode_base62
@@ -63,13 +65,36 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
     if not url:
         return None
 
-    recent_clicks = (
+    clicks = (
         db.query(models.ClickEvent)
         .filter(models.ClickEvent.url_id == url.id)
         .order_by(models.ClickEvent.clicked_at.desc())
-        .limit(50)
         .all()
     )
+
+    recent_clicks = clicks[:50]
+
+    clicks_by_date_dict = Counter()
+    browser_dict = Counter()
+    os_dict = Counter()
+
+    for click in clicks:
+        # We need to make sure timezone matches, assuming UTC stored
+        date_str = click.clicked_at.strftime('%Y-%m-%d')
+        clicks_by_date_dict[date_str] += 1
+
+        if click.user_agent:
+            ua = parse(click.user_agent)
+            browser_dict[ua.browser.family] += 1
+            os_dict[ua.os.family] += 1
+        else:
+            browser_dict['Unknown'] += 1
+            os_dict['Unknown'] += 1
+
+    # Format for charting
+    clicks_by_date = [{"name": k, "value": v} for k, v in sorted(clicks_by_date_dict.items())]
+    browser_stats = [{"name": k, "value": v} for k, v in browser_dict.items()]
+    os_stats = [{"name": k, "value": v} for k, v in os_dict.items()]
 
     return {
         "original_url": url.original_url,
@@ -77,6 +102,9 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
         "created_at": url.created_at,
         "expires_at": url.expires_at,
         "total_clicks": url.click_count,
+        "clicks_by_date": clicks_by_date,
+        "browser_stats": browser_stats,
+        "os_stats": os_stats,
         "recent_clicks": recent_clicks,
     }
 
