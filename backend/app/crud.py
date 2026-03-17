@@ -1,8 +1,9 @@
 """Database CRUD operations for the URL shortener."""
 
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, timezone
 from collections import Counter
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.orm import Session
 from user_agents import parse
 
 from . import models, schemas
@@ -13,7 +14,9 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     """Create a new shortened URL entry."""
     expires_at = None
     if url_data.expires_in_hours:
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=url_data.expires_in_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            hours=url_data.expires_in_hours
+        )
 
     db_url = models.URL(
         original_url=str(url_data.url),
@@ -25,7 +28,9 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     db.flush()  # Get the auto-generated ID
 
     # Generate short code from the ID using Base62
-    db_url.short_code = encode_base62(db_url.id + 1000)  # Offset to avoid very short codes
+    db_url.short_code = encode_base62(
+        db_url.id + 1000
+    )  # Offset to avoid very short codes
 
     db.commit()
     db.refresh(db_url)
@@ -55,7 +60,7 @@ def record_click(
         ip_address=ip_address,
     )
     db.add(click)
-    url.click_count += 1
+    url.click_count = models.URL.click_count + 1
     db.commit()
 
 
@@ -80,7 +85,7 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
 
     for click in clicks:
         # We need to make sure timezone matches, assuming UTC stored
-        date_str = click.clicked_at.strftime('%Y-%m-%d')
+        date_str = click.clicked_at.strftime("%Y-%m-%d")
         clicks_by_date_dict[date_str] += 1
 
         if click.user_agent:
@@ -88,11 +93,13 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
             browser_dict[ua.browser.family] += 1
             os_dict[ua.os.family] += 1
         else:
-            browser_dict['Unknown'] += 1
-            os_dict['Unknown'] += 1
+            browser_dict["Unknown"] += 1
+            os_dict["Unknown"] += 1
 
     # Format for charting
-    clicks_by_date = [{"name": k, "value": v} for k, v in sorted(clicks_by_date_dict.items())]
+    clicks_by_date = [
+        {"name": k, "value": v} for k, v in sorted(clicks_by_date_dict.items())
+    ]
     browser_stats = [{"name": k, "value": v} for k, v in browser_dict.items()]
     os_stats = [{"name": k, "value": v} for k, v in os_dict.items()]
 
@@ -112,10 +119,7 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
 def get_recent_urls(db: Session, limit: int = 20) -> list[models.URL]:
     """Get the most recently created URLs."""
     return (
-        db.query(models.URL)
-        .order_by(models.URL.created_at.desc())
-        .limit(limit)
-        .all()
+        db.query(models.URL).order_by(models.URL.created_at.desc()).limit(limit).all()
     )
 
 

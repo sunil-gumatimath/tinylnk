@@ -1,17 +1,18 @@
 """FastAPI URL Shortener — Main Application."""
 
-from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 import os
 
-from .database import engine, get_db, Base
-from . import crud, schemas, models
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
+
+from . import crud, models, schemas
+from .database import Base, engine, get_db
 from .utils import is_valid_alias
 
 # Create tables
@@ -25,6 +26,15 @@ app = FastAPI(
     description="A fast and modern URL shortener API",
     version="1.0.0",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.state.limiter = limiter
 
 
@@ -40,11 +50,28 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
-if os.path.isdir(ASSETS_DIR):
-    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+RESERVED_ALIASES = {
+    "api",
+    "assets",
+    "docs",
+    "openapi.json",
+    "favicon.ico",
+    "recent",
+    "shorten",
+    "stats",
+}
 
 
 # ─── Routes ──────────────────────────────────────────────
+
+
+@app.get("/assets/{file_path:path}")
+async def serve_assets(file_path: str):
+    """Serve static assets dynamically."""
+    asset_path = os.path.join(ASSETS_DIR, file_path)
+    if os.path.isfile(asset_path):
+        return FileResponse(asset_path)
+    raise HTTPException(status_code=404, detail="Asset not found")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -73,6 +100,10 @@ async def shorten_url(
     """Create a shortened URL."""
     # Validate custom alias if provided
     if url_data.custom_alias:
+        if url_data.custom_alias.lower() in RESERVED_ALIASES:
+            raise HTTPException(
+                status_code=400, detail="This alias is reserved and cannot be used."
+            )
         if not is_valid_alias(url_data.custom_alias):
             raise HTTPException(
                 status_code=400,
@@ -88,6 +119,13 @@ async def shorten_url(
     if not url_str.startswith(("http://", "https://")):
         url_str = "https://" + url_str
         url_data.url = url_str
+
+    base_url = str(request.base_url).rstrip("/")
+    if url_str.startswith(base_url):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot shorten URLs pointing to this domain.",
+        )
 
     db_url = crud.create_short_url(db, url_data)
 
@@ -142,7 +180,7 @@ async def redirect_to_url(
 ):
     """Redirect to the original URL and record the click."""
     # Skip API and static routes
-    if short_code in ("api", "assets", "docs", "openapi.json", "favicon.ico"):
+    if short_code in RESERVED_ALIASES:
         raise HTTPException(status_code=404, detail="Not found.")
 
     url = crud.get_url_by_code(db, short_code)
@@ -162,4 +200,4 @@ async def redirect_to_url(
         ip_address=request.client.host if request.client else None,
     )
 
-    return RedirectResponse(url=url.original_url, status_code=307)
+    return RedirectResponse(url=url.original_url, status_code=302)
