@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Layout, Typography, Form, Input, InputNumber, Button, Table, message, Modal, Space, Popconfirm } from 'antd';
-import { Scissors, Copy, RotateCw, BarChart2, Trash2 } from 'lucide-react';
+import { Layout, Typography, Form, Input, InputNumber, Button, Table, message, Modal, Space, Popconfirm, Tag } from 'antd';
+import { Scissors, Copy, RotateCw, BarChart2, Trash2, QrCode } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const { Content } = Layout;
@@ -15,6 +15,8 @@ interface ShortenedURL {
   short_url: string;
   created_at: string;
   expires_at: string | null;
+  max_clicks: number | null;
+  tag: string | null;
   click_count: number;
 }
 
@@ -34,6 +36,8 @@ interface UrlStats {
   short_code: string;
   created_at: string;
   expires_at: string | null;
+  max_clicks: number | null;
+  tag: string | null;
   total_clicks: number;
   clicks_by_date: StatsItem[];
   browser_stats: StatsItem[];
@@ -45,6 +49,8 @@ interface ShortenFormValues {
   url: string;
   custom_alias?: string;
   expires_in_hours?: number;
+  max_clicks?: number;
+  tag?: string;
 }
 
 function App() {
@@ -57,6 +63,8 @@ function App() {
   const [currentStats, setCurrentStats] = useState<UrlStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [currentQrUrl, setCurrentQrUrl] = useState<string | null>(null);
 
   const fetchRecentLinks = async () => {
     setTableLoading(true);
@@ -107,6 +115,8 @@ function App() {
           url: values.url,
           custom_alias: values.custom_alias ? values.custom_alias.trim() : null,
           expires_in_hours: values.expires_in_hours ? Number(values.expires_in_hours) : null,
+          max_clicks: values.max_clicks ? Number(values.max_clicks) : null,
+          tag: values.tag ? values.tag.trim() : null,
         }),
       });
       
@@ -179,6 +189,11 @@ function App() {
     }
   };
 
+  const showQrCode = (shortCode: string) => {
+    setCurrentQrUrl(`/api/qr/${shortCode}`);
+    setQrModalVisible(true);
+  };
+
   const columns = [
     {
       title: 'Short URL',
@@ -202,10 +217,19 @@ function App() {
       )
     },
     {
+      title: 'Tag',
+      dataIndex: 'tag',
+      key: 'tag',
+      width: 100,
+      render: (tag: string | null) => tag ? <Tag color="blue">{tag}</Tag> : '-',
+    },
+    {
       title: 'Clicks',
-      dataIndex: 'click_count',
-      key: 'click_count',
-      width: 80,
+      key: 'clicks',
+      width: 100,
+      render: (_value: unknown, record: ShortenedURL) => (
+        <span>{record.click_count} {record.max_clicks ? `/ ${record.max_clicks}` : ''}</span>
+      ),
     },
     {
       title: 'Created',
@@ -223,6 +247,12 @@ function App() {
             icon={<Copy size={16} />}
             onClick={() => handleCopy(getShortUrl(record))}
             title="Copy URL"
+          />
+          <Button
+            type="text"
+            icon={<QrCode size={16} />}
+            onClick={() => showQrCode(record.short_code)}
+            title="View QR Code"
           />
           <Button
             type="text"
@@ -313,6 +343,20 @@ function App() {
               >
                 <InputNumber style={{ width: '100%' }} placeholder="e.g. 24" min={1} max={8760} />
               </Form.Item>
+              <Form.Item
+                name="max_clicks"
+                label={<span style={{ color: 'var(--text-secondary)' }}>Max Clicks (optional)</span>}
+                style={{ flex: 1, minWidth: '200px' }}
+              >
+                <InputNumber style={{ width: '100%' }} placeholder="e.g. 100" min={1} />
+              </Form.Item>
+              <Form.Item
+                name="tag"
+                label={<span style={{ color: 'var(--text-secondary)' }}>Tag / Category (optional)</span>}
+                style={{ flex: 1, minWidth: '200px' }}
+              >
+                <Input placeholder="e.g. marketing" />
+              </Form.Item>
             </div>
           </Form>
 
@@ -322,6 +366,7 @@ function App() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <Input value={getShortUrl(result)} readOnly style={{ flex: 1, color: 'var(--accent)' }} />
                 <Button icon={<Copy size={16} />} onClick={() => handleCopy(getShortUrl(result))}>Copy</Button>
+                <Button icon={<QrCode size={16} />} onClick={() => showQrCode(result.short_code)}>QR</Button>
               </div>
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {result.original_url}
@@ -374,7 +419,9 @@ function App() {
               <div style={{ display: 'flex', gap: '24px', marginTop: '16px' }}>
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)'}}>Total Clicks</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{currentStats.total_clicks}</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold' }}>
+                    {currentStats.total_clicks} {currentStats.max_clicks ? <span style={{fontSize: '16px', color: 'var(--text-secondary)'}}>/ {currentStats.max_clicks}</span> : ''}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)'}}>Created</div>
@@ -459,6 +506,40 @@ function App() {
             )}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <QrCode size={20} /> <span style={{ color: 'var(--text-primary)'}}>QR Code</span>
+          </div>
+        }
+        open={qrModalVisible}
+        onCancel={() => setQrModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setQrModalVisible(false)}>
+            Close
+          </Button>,
+          <Button key="download" type="primary" onClick={() => {
+            if (currentQrUrl) {
+              const a = document.createElement('a');
+              a.href = currentQrUrl;
+              a.download = 'qrcode.png';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }
+          }}>
+            Download
+          </Button>
+        ]}
+        width={400}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
+          {currentQrUrl && (
+            <img src={currentQrUrl} alt="QR Code" style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px' }} />
+          )}
+        </div>
       </Modal>
     </Layout>
   );

@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv
+node_modules
+dist
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+urlshortener.db
+data/

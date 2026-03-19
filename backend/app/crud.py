@@ -23,6 +23,8 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
         short_code="",  # Placeholder, will be set after flush
         custom_alias=url_data.custom_alias,
         expires_at=expires_at,
+        max_clicks=url_data.max_clicks,
+        tag=url_data.tag,
     )
     db.add(db_url)
     db.flush()  # Get the auto-generated ID
@@ -108,6 +110,8 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
         "short_code": url.custom_alias or url.short_code,
         "created_at": url.created_at,
         "expires_at": url.expires_at,
+        "max_clicks": url.max_clicks,
+        "tag": url.tag,
         "total_clicks": url.click_count,
         "clicks_by_date": clicks_by_date,
         "browser_stats": browser_stats,
@@ -125,6 +129,9 @@ def get_recent_urls(db: Session, limit: int = 20) -> list[models.URL]:
 
 def is_url_expired(url: models.URL) -> bool:
     """Check if a URL has expired."""
+    if url.max_clicks is not None and url.click_count >= url.max_clicks:
+        return True
+
     if url.expires_at is None:
         return False
 

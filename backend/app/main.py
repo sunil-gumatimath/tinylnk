@@ -1,8 +1,10 @@
 """FastAPI URL Shortener — Main Application."""
 
 import os
+import io
+import qrcode
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,6 +50,10 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # Mount static files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+if not os.path.exists(STATIC_DIR):
+    # Try looking for dist in a slightly different place for Docker
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
 ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
 RESERVED_ALIASES = {
@@ -140,6 +146,8 @@ async def shorten_url(
         short_url=f"{base_url}/{code}",
         created_at=db_url.created_at,
         expires_at=db_url.expires_at,
+        max_clicks=db_url.max_clicks,
+        tag=db_url.tag,
         click_count=db_url.click_count,
     )
 
@@ -166,6 +174,8 @@ async def get_recent(request: Request, db: Session = Depends(get_db)):
             short_url=f"{base_url}/{u.custom_alias or u.short_code}",
             created_at=u.created_at,
             expires_at=u.expires_at,
+            max_clicks=u.max_clicks,
+            tag=u.tag,
             click_count=u.click_count,
         )
         for u in urls
@@ -213,3 +223,25 @@ async def redirect_to_url(
     )
 
     return RedirectResponse(url=url.original_url, status_code=302)
+
+@app.get("/api/qr/{short_code}")
+async def get_qr_code(short_code: str, request: Request, db: Session = Depends(get_db)):
+    """Generate a QR code for a short URL."""
+    url = crud.get_url_by_code(db, short_code)
+    if not url:
+        raise HTTPException(status_code=404, detail="Short URL not found.")
+
+    base_url = str(request.base_url).rstrip("/")
+    code = url.custom_alias or url.short_code
+    short_url = f"{base_url}/{code}"
+
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(short_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+
+    return Response(content=img_byte_arr.getvalue(), media_type="image/png")
+

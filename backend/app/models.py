@@ -14,6 +14,8 @@ class URL(Base):
     custom_alias = Column(String(50), unique=True, index=True, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=True)
+    max_clicks = Column(Integer, nullable=True)
+    tag = Column(String(50), nullable=True, index=True)
     click_count = Column(Integer, default=0)
 
     clicks = relationship("ClickEvent", back_populates="url", cascade="all, delete-orphan")

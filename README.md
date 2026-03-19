@@ -81,6 +81,16 @@ cd ..
 uvicorn backend.app.main:app --reload
 ```
 
+## Run with Docker
+
+You can easily run the entire application using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+This will build the application and start it on port `8000`. The SQLite database will be persisted in a local `data` directory.
+
 The app will be available at:
 
 - **App UI:** `http://127.0.0.1:8000/`
@@ -252,7 +262,6 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 Possible next steps for the project:
 - add tests
-- add Docker support
 - add environment-based configuration
 - support PostgreSQL
 - add authentication for link management

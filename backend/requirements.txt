@@ -4,3 +4,4 @@ sqlalchemy==2.0.35
 python-dotenv==1.0.1
 slowapi==0.1.9
 user-agents==2.2.0
+qrcode[pil]==7.4.2
