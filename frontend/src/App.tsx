@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Layout, Typography, Form, Input, InputNumber, Button, Table, message, Modal, Space } from 'antd';
-import { Scissors, Copy, RotateCw, BarChart2 } from 'lucide-react';
+import { Layout, Typography, Form, Input, InputNumber, Button, Table, message, Modal, Space, Popconfirm } from 'antd';
+import { Scissors, Copy, RotateCw, BarChart2, Trash2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const { Content } = Layout;
@@ -161,6 +161,24 @@ function App() {
     }
   };
 
+  const handleDelete = async (shortCode: string) => {
+    try {
+      const res = await fetch(`/api/urls/${shortCode}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        message.success('Link deleted successfully');
+        fetchRecentLinks();
+      } else {
+        const data = await res.json();
+        message.error(data.detail || 'Failed to delete link');
+      }
+    } catch (error) {
+      console.error('Failed to delete link', error);
+      message.error('An error occurred while deleting');
+    }
+  };
+
   const columns = [
     {
       title: 'Short URL',
@@ -200,16 +218,33 @@ function App() {
       key: 'actions',
       render: (_value: unknown, record: ShortenedURL) => (
         <Space size="middle">
-          <Button 
-            type="text" 
-            icon={<Copy size={16} />} 
+          <Button
+            type="text"
+            icon={<Copy size={16} />}
             onClick={() => handleCopy(getShortUrl(record))}
+            title="Copy URL"
           />
-          <Button 
-            type="text" 
-            icon={<BarChart2 size={16} />} 
+          <Button
+            type="text"
+            icon={<BarChart2 size={16} />}
             onClick={() => showStats(record.short_code)}
+            title="View Stats"
           />
+          <Popconfirm
+            title="Delete this link?"
+            description="Are you sure you want to delete this link and its analytics?"
+            onConfirm={() => handleDelete(record.short_code)}
+            okText="Yes"
+            cancelText="No"
+            placement="topRight"
+          >
+            <Button
+              type="text"
+              danger
+              icon={<Trash2 size={16} />}
+              title="Delete Link"
+            />
+          </Popconfirm>
         </Space>
       ),
     },

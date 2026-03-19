@@ -172,6 +172,18 @@ async def get_recent(request: Request, db: Session = Depends(get_db)):
     ]
 
 
+@app.delete("/api/urls/{short_code}", status_code=204)
+async def delete_url_endpoint(short_code: str, db: Session = Depends(get_db)):
+    """Delete a shortened URL and its analytics."""
+    if short_code in RESERVED_ALIASES:
+        raise HTTPException(status_code=400, detail="Cannot delete reserved alias.")
+
+    success = crud.delete_url(db, short_code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Short URL not found.")
+    return None
+
+
 @app.get("/{short_code}")
 async def redirect_to_url(
     short_code: str,
