@@ -1,20 +1,26 @@
 # tinylnk
 
-A modern URL shortener built with **FastAPI**, **SQLAlchemy**, **SQLite**, and a lightweight **vanilla frontend**.
+A modern, self-hostable URL shortener built with **FastAPI**, **SQLAlchemy**, **SQLite**, and a **React + TypeScript** frontend.
 
-It lets you:
-- shorten long URLs
+With tinylnk, you can:
+- shorten long URLs instantly
 - create custom aliases
-- set link expiration times
-- track click analytics
-- use a simple web UI or API
+- set expiration times or maximum click limits
+- organize links with tags
+- view click analytics
+- generate QR codes for short links
+- manage links from a clean web UI or the API
 
 ## Features
 
 - Fast URL shortening API
-- Custom short aliases
-- Expiring links
-- Click tracking and recent analytics
+- Custom aliases
+- Optional expiration times
+- Optional max-click limits
+- Tags for link organization
+- Click analytics with browser and OS breakdowns
+- Recent links dashboard
+- QR code generation for short URLs
 - Built-in rate limiting with `slowapi`
 - Frontend served directly by the FastAPI app
 - SQLite-based local persistence
@@ -26,7 +32,8 @@ It lets you:
 - **ORM:** SQLAlchemy
 - **Server:** Uvicorn
 - **Rate limiting:** SlowAPI
-- **Frontend:** React, TypeScript, Vite, Ant Design (built with Bun)
+- **Frontend:** React, TypeScript, Vite, Ant Design, Recharts
+- **Frontend package manager / build tooling:** Bun
 
 ## Project Structure
 
@@ -42,11 +49,13 @@ It lets you:
 │   │   ├── schemas.py
 │   │   └── utils.py
 │   └── requirements.txt
-├── frontend/          # React TS application
-│   ├── src/           # Components and styles
-│   ├── package.json   # Dependencies
-│   └── vite.config.ts # Vite configuration
-├── .gitignore
+├── frontend/
+│   ├── src/
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── bun.lock
+├── Dockerfile
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -54,13 +63,13 @@ It lets you:
 
 - **Python 3.10+**
 - `pip`
-- **Bun** (for frontend dependencies and build)
+- **Bun** for frontend dependencies and builds
 
 > Python 3.10+ is recommended because the codebase uses modern type hints such as `list[...]` and `| None`.
 
 ## Installation
 
-Clone the repository and install dependencies:
+Clone the repository and install backend dependencies:
 
 ```bash
 git clone https://github.com/sunil-gumatimath/tinylnk.git
@@ -70,7 +79,7 @@ pip install -r backend/requirements.txt
 
 ## Run Locally
 
-Build the frontend once, then start the backend server:
+Build the frontend, then start the FastAPI server:
 
 ```bash
 cd frontend
@@ -81,29 +90,47 @@ cd ..
 uvicorn backend.app.main:app --reload
 ```
 
-## Run with Docker
-
-You can easily run the entire application using Docker Compose:
-
-```bash
-docker-compose up -d
-```
-
-This will build the application and start it on port `8000`. The SQLite database will be persisted in a local `data` directory.
-
 The app will be available at:
 
 - **App UI:** `http://127.0.0.1:8000/`
 - **Swagger docs:** `http://127.0.0.1:8000/docs`
 - **ReDoc:** `http://127.0.0.1:8000/redoc`
 
+## Frontend Development
+
+If you want to work on the frontend separately:
+
+```bash
+cd frontend
+bun install
+bun run dev
+```
+
+Then build it for production before serving it through FastAPI:
+
+```bash
+bun run build
+```
+
+The FastAPI backend serves the compiled frontend from `frontend/dist`.
+
+## Run with Docker
+
+You can run the full app with Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+This builds the image, starts the app on port `8000`, and persists SQLite data in a local `data` directory.
+
 ## How It Works
 
-- The frontend is served from the `frontend/` folder.
+- The React frontend is served by the FastAPI backend.
 - FastAPI exposes API routes under `/api/...`.
-- Short codes are generated using **Base62 encoding**.
-- Data is stored in a local SQLite database file named `urlshortener.db` in the project root.
-- Every redirect can record click metadata such as:
+- Short codes are generated using Base62 encoding unless you provide a custom alias.
+- Data is stored in a local SQLite database file named `urlshortener.db`.
+- Redirects can record click metadata such as:
   - referrer
   - user agent
   - IP address
@@ -119,7 +146,9 @@ Create a shortened URL.
 {
   "url": "https://example.com/some/very/long/path",
   "custom_alias": "my-link",
-  "expires_in_hours": 24
+  "expires_in_hours": 24,
+  "max_clicks": 100,
+  "tag": "marketing"
 }
 ```
 
@@ -127,12 +156,15 @@ Create a shortened URL.
 
 - `custom_alias` is optional
 - `expires_in_hours` is optional
+- `max_clicks` is optional
+- `tag` is optional
 - if the URL does not start with `http://` or `https://`, the backend prefixes it with `https://`
 - aliases must be **3 to 50 characters** and may contain:
   - letters
   - numbers
   - hyphens (`-`)
   - underscores (`_`)
+- reserved aliases such as `api`, `docs`, and `assets` cannot be used
 
 #### Example response
 
@@ -144,6 +176,8 @@ Create a shortened URL.
   "short_url": "http://127.0.0.1:8000/my-link",
   "created_at": "2026-03-16T12:00:00Z",
   "expires_at": "2026-03-17T12:00:00Z",
+  "max_clicks": 100,
+  "tag": "marketing",
   "click_count": 0
 }
 ```
@@ -164,6 +198,8 @@ Returns the most recently created shortened URLs.
     "short_url": "http://127.0.0.1:8000/g9",
     "created_at": "2026-03-16T12:00:00Z",
     "expires_at": null,
+    "max_clicks": null,
+    "tag": null,
     "click_count": 3
   }
 ]
@@ -182,7 +218,18 @@ Returns analytics for a given short code or custom alias.
   "short_code": "g9",
   "created_at": "2026-03-16T12:00:00Z",
   "expires_at": null,
+  "max_clicks": null,
+  "tag": "marketing",
   "total_clicks": 3,
+  "clicks_by_date": [
+    { "name": "2026-03-16", "value": 3 }
+  ],
+  "browser_stats": [
+    { "name": "Chrome", "value": 2 }
+  ],
+  "os_stats": [
+    { "name": "Windows", "value": 2 }
+  ],
   "recent_clicks": [
     {
       "clicked_at": "2026-03-16T12:10:00Z",
@@ -195,12 +242,24 @@ Returns analytics for a given short code or custom alias.
 
 ---
 
+### `GET /api/qr/{short_code}`
+Returns a PNG QR code image for a short URL.
+
+---
+
+### `DELETE /api/urls/{short_code}`
+Deletes a short URL and its analytics.
+
+Returns `204 No Content` on success.
+
+---
+
 ### `GET /{short_code}`
 Redirects to the original URL and records the click.
 
 #### Possible responses
 
-- `307` redirect on success
+- `302` redirect on success
 - `404` if the short code does not exist
 - `410` if the link has expired
 
@@ -230,20 +289,19 @@ The database file is created automatically as:
 urlshortener.db
 ```
 
-Tables are created on app startup using:
-- `urls`
-- `click_events`
+Tables are created on app startup, including data for URLs and click events.
 
 ## Frontend
 
-The frontend is a modern React + TypeScript application built with Vite and Ant Design. It provides:
-- URL shortening form
-- advanced options for alias and expiration
-- recent links table
-- stats modal for analytics
-- copy-to-clipboard support
+The frontend is a React + TypeScript application built with Vite and Ant Design. It includes:
 
-The FastAPI backend serves the compiled production build from `frontend/dist`. The root route `/` serves `index.html`, and static assets are mounted under `/assets`. To develop the frontend, run `bun run dev` inside the `frontend` directory.
+- URL shortening form
+- advanced options for alias, expiration, click limits, and tags
+- recent links table
+- stats modal with analytics charts
+- copy-to-clipboard support
+- QR code generation
+- delete actions for saved links
 
 ## Development Notes
 
@@ -265,7 +323,7 @@ Possible next steps for the project:
 - add environment-based configuration
 - support PostgreSQL
 - add authentication for link management
-- add deletion and editing for short links
+- add editing for short links
 
 ## License
 
