@@ -6,7 +6,6 @@
       "name": "frontend",
       "dependencies": {
         "antd": "^6.3.3",
-        "lucide-react": "^0.577.0",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "recharts": "^3.8.0",
@@ -21,6 +20,7 @@
         "eslint-plugin-react-hooks": "^7.0.1",
         "eslint-plugin-react-refresh": "^0.5.2",
         "globals": "^17.4.0",
+        "lucide-react": "^0.577.0",
         "typescript": "~5.9.3",
         "typescript-eslint": "^8.56.1",
         "vite": "^8.0.0",
