@@ -1,12 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ConfigProvider, theme } from 'antd'
+import { ConfigProvider } from 'antd'
 import App from './App.tsx'
+import { appTheme } from './theme.ts'
 import './index.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm, token: { colorPrimary: '#3b82f6', colorBgBase: '#0a0f1a' } }}>
+    <ConfigProvider theme={appTheme}>
       <App />
     </ConfigProvider>
   </StrictMode>,
