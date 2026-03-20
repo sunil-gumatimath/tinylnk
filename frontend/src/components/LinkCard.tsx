@@ -1,0 +1,67 @@
+import { Button, Popconfirm, Tag } from 'antd';
+import { BarChart2, Calendar, Copy, ExternalLink, QrCode, Tag as TagIcon, Trash2 } from 'lucide-react';
+import type { ShortenedURL } from '../types';
+
+interface LinkCardProps {
+  record: ShortenedURL;
+  getShortUrl: (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) => string;
+  onCopy: (text: string) => Promise<void>;
+  onShowQr: (shortCode: string) => void;
+  onShowStats: (shortCode: string) => Promise<void>;
+  onDelete: (shortCode: string) => Promise<void>;
+}
+
+export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, onDelete }: LinkCardProps) {
+  return (
+    <article className="link-card panel-surface">
+      <div className="link-card-top">
+        <div className="link-copy">
+          <div className="link-short">
+            <a href={getShortUrl(record)} target="_blank" rel="noopener noreferrer">
+              {record.short_code}
+            </a>
+            <ExternalLink size={14} />
+          </div>
+          <p className="link-original">{record.original_url}</p>
+        </div>
+
+        <div className="link-actions">
+          <Button onClick={() => onCopy(getShortUrl(record))} icon={<Copy size={15} />} />
+          <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} />
+          <Button onClick={() => onShowStats(record.short_code)} icon={<BarChart2 size={15} />} />
+          <Popconfirm
+            title="Delete this link?"
+            description="This also removes its analytics history."
+            okText="Delete"
+            cancelText="Cancel"
+            placement="topRight"
+            onConfirm={() => onDelete(record.short_code)}
+          >
+            <Button danger icon={<Trash2 size={15} />} />
+          </Popconfirm>
+        </div>
+      </div>
+
+      <div className="link-meta">
+        <Tag bordered={false} className="meta-tag">
+          {record.click_count} clicks{record.max_clicks ? ` / ${record.max_clicks}` : ''}
+        </Tag>
+        <Tag bordered={false} className="meta-tag">
+          <Calendar size={12} />
+          {new Date(record.created_at).toLocaleDateString()}
+        </Tag>
+        {record.tag ? (
+          <Tag bordered={false} className="meta-tag">
+            <TagIcon size={12} />
+            {record.tag}
+          </Tag>
+        ) : null}
+        {record.expires_at ? (
+          <Tag bordered={false} className="meta-tag subtle-tag">
+            Expires {new Date(record.expires_at).toLocaleDateString()}
+          </Tag>
+        ) : null}
+      </div>
+    </article>
+  );
+}
