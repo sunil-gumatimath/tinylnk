@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Button, Form, Input, InputNumber } from 'antd';
-import { ChevronDown, ChevronUp, Link2, ScanQrCode } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Link2, ScanQrCode } from 'lucide-react';
 import type { FormInstance } from 'antd/es/form';
 import type { ShortenFormValues, ShortenedURL } from '../types';
 
@@ -28,20 +29,28 @@ export function ShortenerForm({
   getShortUrl,
   validateUrlInput,
 }: ShortenerFormProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyClick = async (url: string) => {
+    await onCopy(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <section id="shorten-form" className="composer-section">
       <div className="section-heading">
-        <span className="section-kicker">Core action</span>
-        <h2>Make the shortest path the clearest path.</h2>
-        <p>Keep the main form simple, then reveal advanced controls only when needed.</p>
+        <span className="section-kicker">Create</span>
+        <h2>Shorten a new link</h2>
+        <p>Enter your destination URL and we'll generate a tiny link for it.</p>
       </div>
 
       <div className="composer-layout">
         <div className="panel-surface composer-panel">
           <div className="panel-header">
             <div>
-              <span className="panel-label">Shorten a URL</span>
-              <h3>Fast input, better defaults</h3>
+              <span className="panel-label">Fast input</span>
+              <h3>Enter a destination URL</h3>
             </div>
           </div>
 
@@ -90,37 +99,28 @@ export function ShortenerForm({
           </Form>
         </div>
 
-        <div className="panel-surface guidance-panel">
-          <div className="panel-header">
-            <div>
-              <span className="panel-label">Design notes</span>
-              <h3>Why this feels better</h3>
-            </div>
-          </div>
-          <ul className="guidance-list">
-            <li>The input is now the visual hero, not one of several competing elements.</li>
-            <li>Advanced settings behave like optional controls, which keeps the page calmer.</li>
-            <li>Ant Design still powers interactions, but the surface styling no longer looks default.</li>
-          </ul>
-
+        <div className="result-container" style={{ display: 'flex', flexDirection: 'column' }}>
           {result ? (
-            <div className="result-panel">
+            <div className="result-panel panel-surface" style={{ flex: 1, margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div className="result-header">
                 <span className="result-badge">Live result</span>
                 <span className="result-title">Your new short link is ready</span>
               </div>
               <div className="result-link">{getShortUrl(result)}</div>
-              <div className="result-origin">{result.original_url}</div>
+              <div className="result-origin truncate-text">{result.original_url}</div>
               <div className="result-actions">
-                <Button onClick={() => onCopy(getShortUrl(result))}>Copy link</Button>
+                <Button onClick={() => handleCopyClick(getShortUrl(result))} icon={copied ? <Check size={16} color="green" /> : undefined}>
+                  {copied ? 'Copied!' : 'Copy link'}
+                </Button>
                 <Button icon={<ScanQrCode size={16} />} onClick={() => onShowQr(result.short_code)}>
                   Show QR
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="result-placeholder">
-              The success state will appear here with copy and QR actions as soon as a link is created.
+            <div className="empty-state panel-surface" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <h3 style={{ margin: 0 }}>Ready when you are</h3>
+              <p style={{ margin: '8px 0 0 0' }}>Your generated URL will appear here.</p>
             </div>
           )}
         </div>

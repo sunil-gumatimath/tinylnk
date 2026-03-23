@@ -164,9 +164,6 @@ function App() {
   return (
     <Layout className="app-shell">
       <div className="ambient-backdrop">
-        <div className="ambient ambient-a" />
-        <div className="ambient ambient-b" />
-        <div className="ambient ambient-c" />
         <div className="grid-overlay" />
       </div>
 
@@ -190,10 +187,9 @@ function App() {
           <div className="section-heading section-heading-row">
             <div>
               <span className="section-kicker">Manage links</span>
-              <Title level={2}>Recent links</Title>
+              <Title level={2}>Recently shortened URLs</Title>
               <Paragraph>
-                The recent links area now reads like a workspace instead of a raw list, with clearer actions and
-                metadata.
+                View, manage, and check analytics for your generated short links.
               </Paragraph>
             </div>
             <Button onClick={fetchRecentLinks} loading={tableLoading} icon={<RefreshCw size={16} />}>

@@ -19,8 +19,7 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
 
         <h1>Shorten, track, and share links from one focused workspace.</h1>
         <p className="hero-lede">
-          tinylnk now feels more like a modern publishing tool than a utility page, with a faster path to shorten,
-          clearer link management, and analytics that are easy to scan.
+          A lightning-fast utility to create short links, manage them in a clean workspace, and view detailed click analytics.
         </p>
 
         <div className="hero-actions">

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Button, Popconfirm, Tag } from 'antd';
-import { BarChart2, Calendar, Copy, ExternalLink, QrCode, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { BarChart2, Calendar, Check, Copy, ExternalLink, QrCode, Tag as TagIcon, Trash2 } from 'lucide-react';
 import type { ShortenedURL } from '../types';
 
 interface LinkCardProps {
@@ -12,6 +13,14 @@ interface LinkCardProps {
 }
 
 export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, onDelete }: LinkCardProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyClick = async () => {
+    await onCopy(getShortUrl(record));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <article className="link-card panel-surface">
       <div className="link-card-top">
@@ -22,11 +31,11 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
             </a>
             <ExternalLink size={14} />
           </div>
-          <p className="link-original">{record.original_url}</p>
+          <p className="link-original truncate-text">{record.original_url}</p>
         </div>
 
         <div className="link-actions">
-          <Button onClick={() => onCopy(getShortUrl(record))} icon={<Copy size={15} />} />
+          <Button onClick={handleCopyClick} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} />
           <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} />
           <Button onClick={() => onShowStats(record.short_code)} icon={<BarChart2 size={15} />} />
           <Popconfirm

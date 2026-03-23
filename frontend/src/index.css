@@ -12,8 +12,8 @@
   --text: #14213d;
   --text-muted: #5b6475;
   --heading: #0d1b2a;
-  --primary: #1d4ed8;
-  --primary-strong: #143ea8;
+  --primary: #111111;
+  --primary-strong: #000000;
   --accent: #f97316;
   --success: #059669;
   --shadow: 0 28px 80px rgba(34, 25, 11, 0.12);
@@ -405,9 +405,24 @@ a {
 .activity-panel,
 .stats-hero,
 .kpi-card,
-.link-card,
 .empty-state {
   padding: 24px;
+}
+
+.link-card {
+  padding: 16px 20px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.link-card:hover {
+  transform: translateY(-2px) scale(1.005);
+  box-shadow: 0 16px 32px rgba(34, 25, 11, 0.12);
+}
+
+.truncate-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .panel-header {
@@ -509,13 +524,16 @@ a {
 
 .links-grid {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
   gap: 16px;
 }
 
 .link-card-top {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 16px;
   align-items: start;
 }
 
@@ -529,8 +547,8 @@ a {
   gap: 8px;
   color: var(--primary);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-size: 1.6rem;
+  font-weight: 800;
 }
 
 .link-short a {
@@ -760,6 +778,10 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .links-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .section-heading-row {
     align-items: start;
     flex-direction: column;
@@ -783,7 +805,8 @@ a {
   .hero-metrics,
   .advanced-grid,
   .stats-kpis,
-  .showcase-grid {
+  .showcase-grid,
+  .links-grid {
     grid-template-columns: 1fr;
   }
 
