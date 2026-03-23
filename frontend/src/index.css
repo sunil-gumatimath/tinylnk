@@ -20,6 +20,39 @@
   --radius-xl: 32px;
   --radius-lg: 24px;
   --radius-md: 18px;
+  --badge-bg: rgba(255, 255, 255, 0.55);
+  --card-bg: rgba(255, 255, 255, 0.45);
+  --showcase-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 248, 238, 0.92));
+  --mini-card-bg: rgba(255, 255, 255, 0.78);
+  --warm-bg: rgba(255, 243, 231, 0.9);
+  --activity-bg: rgba(255, 255, 255, 0.62);
+  --solid-bg: #ffffff;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --surface: rgba(30, 41, 59, 0.9);
+  --surface-strong: #1e293b;
+  --surface-muted: #334155;
+  --line: #334155;
+  --line-strong: #475569;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --heading: #f8fafc;
+  --primary: #1d4ed8;
+  --primary-strong: #3b82f6;
+  --accent: #f97316;
+  --success: #059669;
+  --shadow: 0 28px 80px rgba(0, 0, 0, 0.4);
+  
+  --badge-bg: rgba(30, 41, 59, 0.65);
+  --card-bg: rgba(30, 41, 59, 0.55);
+  --showcase-bg: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.92));
+  --mini-card-bg: rgba(30, 41, 59, 0.78);
+  --warm-bg: rgba(67, 20, 7, 0.6);
+  --activity-bg: rgba(30, 41, 59, 0.62);
+  --solid-bg: #1e293b;
 }
 
 * {
@@ -104,8 +137,8 @@ a {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(20, 33, 61, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20, 33, 61, 0.03) 1px, transparent 1px);
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 34px 34px;
   mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.8), transparent 80%);
 }
@@ -120,7 +153,7 @@ a {
 
 .panel-surface {
   background: var(--surface);
-  border: 1px solid rgba(216, 207, 192, 0.85);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
   border-radius: var(--radius-lg);
@@ -149,8 +182,8 @@ a {
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(216, 207, 192, 0.85);
+  background: var(--badge-bg);
+  border: 1px solid var(--line);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 800;
@@ -228,8 +261,8 @@ a {
 .metric-card {
   padding: 16px 18px;
   border-radius: 20px;
-  border: 1px solid rgba(216, 207, 192, 0.85);
-  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid var(--line);
+  background: var(--card-bg);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -263,9 +296,8 @@ a {
   height: 100%;
   min-height: 440px;
   border-radius: var(--radius-xl);
-  border: 1px solid rgba(20, 33, 61, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 248, 238, 0.92)),
+  border: 1px solid var(--line);
+  background: var(--showcase-bg),
     radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 44%);
   overflow: hidden;
 }
@@ -293,8 +325,8 @@ a {
 .mini-shortener,
 .mini-analytics-card {
   border-radius: 22px;
-  border: 1px solid rgba(20, 33, 61, 0.08);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--line);
+  background: var(--mini-card-bg);
   padding: 18px;
 }
 
@@ -366,7 +398,7 @@ a {
 .mini-bars span:nth-child(5) { height: 74%; }
 
 .mini-analytics-card.warm {
-  background: rgba(255, 243, 231, 0.9);
+  background: var(--warm-bg);
 }
 
 .mini-list {
@@ -707,8 +739,8 @@ a {
 .activity-item {
   padding: 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(216, 207, 192, 0.7);
+  background: var(--activity-bg);
+  border: 1px solid var(--line);
 }
 
 .activity-time {
@@ -734,8 +766,8 @@ a {
 .qr-image {
   width: min(100%, 280px);
   border-radius: 22px;
-  border: 1px solid rgba(216, 207, 192, 0.8);
-  background: #fff;
+  border: 1px solid var(--line);
+  background: var(--solid-bg);
   padding: 12px;
 }
 
@@ -756,7 +788,7 @@ a {
 }
 
 .ant-btn-default {
-  background: #fffaf2;
+  background: var(--solid-bg);
   border-color: var(--line);
   color: var(--text);
 }

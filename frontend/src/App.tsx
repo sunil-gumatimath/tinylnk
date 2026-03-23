@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Form, Layout, Spin, Typography, message } from 'antd';
-import { RefreshCw, FolderOpen } from 'lucide-react';
+import { RefreshCw, FolderOpen, Sun, Moon } from 'lucide-react';
+import { useTheme } from './ThemeProvider';
 import { Hero } from './components/Hero';
 import { LinkCard } from './components/LinkCard';
 import { QrModal } from './components/QrModal';
@@ -24,6 +25,7 @@ function App() {
   const [currentShortUrl, setCurrentShortUrl] = useState<string>('');
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [currentQrUrl, setCurrentQrUrl] = useState<string | null>(null);
+  const { isDark, toggleTheme } = useTheme();
 
   const currentHost = window.location.origin;
 
@@ -167,6 +169,13 @@ function App() {
 
   return (
     <Layout className="app-shell">
+      <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 100 }}>
+        <Button 
+          type="text" 
+          onClick={toggleTheme} 
+          icon={isDark ? <Sun size={20} color="var(--text)" /> : <Moon size={20} color="var(--text)" />} 
+        />
+      </div>
       <div className="ambient-backdrop">
         <div className="grid-overlay" />
       </div>
