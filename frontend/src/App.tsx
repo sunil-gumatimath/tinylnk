@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Form, Layout, Spin, Typography, message } from 'antd';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, FolderOpen } from 'lucide-react';
 import { Hero } from './components/Hero';
 import { LinkCard } from './components/LinkCard';
 import { QrModal } from './components/QrModal';
@@ -21,6 +21,7 @@ function App() {
   const [currentStats, setCurrentStats] = useState<UrlStats | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [statsModalVisible, setStatsModalVisible] = useState(false);
+  const [currentShortUrl, setCurrentShortUrl] = useState<string>('');
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [currentQrUrl, setCurrentQrUrl] = useState<string | null>(null);
 
@@ -60,11 +61,13 @@ function App() {
       : `https://${value}`;
 
     try {
-      // eslint-disable-next-line no-new
-      new URL(normalized);
+      const parsed = new URL(normalized);
+      if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
+        throw new Error('Invalid domain');
+      }
       return Promise.resolve();
     } catch {
-      return Promise.reject(new Error('Must be a valid URL or domain.'));
+      return Promise.reject(new Error('Must be a valid URL with a domain.'));
     }
   };
 
@@ -115,7 +118,8 @@ function App() {
     }
   };
 
-  const showStats = async (shortCode: string) => {
+  const showStats = async (shortCode: string, shortUrl: string) => {
+    setCurrentShortUrl(shortUrl);
     setStatsModalVisible(true);
     setStatsLoading(true);
     setCurrentStats(null);
@@ -204,6 +208,7 @@ function App() {
             </div>
           ) : recentLinks.length === 0 ? (
             <div className="empty-state panel-surface">
+              <FolderOpen size={44} strokeWidth={1} color="#9ca3af" style={{ marginBottom: '16px' }} />
               <h3>No links yet</h3>
               <p>Create your first short link above and the workspace will fill in here.</p>
             </div>
@@ -228,7 +233,7 @@ function App() {
       <StatsModal
         open={statsModalVisible}
         loading={statsLoading}
-        currentHost={currentHost}
+        currentShortUrl={currentShortUrl}
         stats={currentStats}
         onClose={() => setStatsModalVisible(false)}
       />

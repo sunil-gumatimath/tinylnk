@@ -1,5 +1,5 @@
 import { Modal } from 'antd';
-import { Activity, BarChart2, Globe, Monitor, MousePointerClick, TimerReset } from 'lucide-react';
+import { BarChart2, Calendar, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { chartColors } from '../theme';
 import type { UrlStats } from '../types';
@@ -7,12 +7,12 @@ import type { UrlStats } from '../types';
 interface StatsModalProps {
   open: boolean;
   loading: boolean;
-  currentHost: string;
+  currentShortUrl: string;
   stats: UrlStats | null;
   onClose: () => void;
 }
 
-export function StatsModal({ open, loading, currentHost, stats, onClose }: StatsModalProps) {
+export function StatsModal({ open, loading, currentShortUrl, stats, onClose }: StatsModalProps) {
   return (
     <Modal
       open={open}
@@ -35,7 +35,7 @@ export function StatsModal({ open, loading, currentHost, stats, onClose }: Stats
           <section className="stats-overview">
             <div className="stats-hero panel-surface">
               <span className="panel-label">Summary</span>
-              <h3>{currentHost}/{stats.short_code}</h3>
+              <h3>{currentShortUrl}</h3>
               <p>{stats.original_url}</p>
             </div>
 
@@ -46,12 +46,12 @@ export function StatsModal({ open, loading, currentHost, stats, onClose }: Stats
                 <span>Total clicks</span>
               </div>
               <div className="kpi-card panel-surface">
-                <TimerReset size={18} />
+                <Target size={18} />
                 <strong>{stats.max_clicks ?? 'Unlimited'}</strong>
                 <span>Click limit</span>
               </div>
               <div className="kpi-card panel-surface">
-                <Activity size={18} />
+                <Calendar size={18} />
                 <strong>{new Date(stats.created_at).toLocaleDateString()}</strong>
                 <span>Created</span>
               </div>
@@ -84,49 +84,51 @@ export function StatsModal({ open, loading, currentHost, stats, onClose }: Stats
             </section>
           ) : null}
 
-          <section className="stats-split">
-            {stats.browser_stats?.length ? (
-              <div className="panel-surface donut-panel">
-                <div className="chart-heading">
-                  <h4>Browsers</h4>
-                  <span>Distribution</span>
+          {(stats.browser_stats?.length || stats.os_stats?.length) ? (
+            <section className="stats-split">
+              {stats.browser_stats?.length ? (
+                <div className="panel-surface donut-panel">
+                  <div className="chart-heading">
+                    <h4>Browsers</h4>
+                    <span>Distribution</span>
+                  </div>
+                  <div className="chart-wrap compact">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={stats.browser_stats} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76}>
+                          {stats.browser_stats.map((_item, index) => (
+                            <Cell key={index} fill={chartColors[index % chartColors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-                <div className="chart-wrap compact">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={stats.browser_stats} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76}>
-                        {stats.browser_stats.map((_item, index) => (
-                          <Cell key={index} fill={chartColors[index % chartColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            {stats.os_stats?.length ? (
-              <div className="panel-surface donut-panel">
-                <div className="chart-heading">
-                  <h4>Operating systems</h4>
-                  <span>Distribution</span>
+              {stats.os_stats?.length ? (
+                <div className="panel-surface donut-panel">
+                  <div className="chart-heading">
+                    <h4>Operating systems</h4>
+                    <span>Distribution</span>
+                  </div>
+                  <div className="chart-wrap compact">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={stats.os_stats} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76}>
+                          {stats.os_stats.map((_item, index) => (
+                            <Cell key={index} fill={chartColors[(index + 2) % chartColors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-                <div className="chart-wrap compact">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={stats.os_stats} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76}>
-                        {stats.os_stats.map((_item, index) => (
-                          <Cell key={index} fill={chartColors[(index + 2) % chartColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-          </section>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="panel-surface activity-panel">
             <div className="chart-heading">

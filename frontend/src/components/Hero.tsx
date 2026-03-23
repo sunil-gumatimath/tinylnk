@@ -65,7 +65,7 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
                   Quick shorten
                 </div>
                 <div className="mini-input-row">
-                  <div className="mini-input">newsletter.example.com/campaign/spring-launch</div>
+                  <div className="mini-input truncate-text">newsletter.example.com/campaign/spring-launch</div>
                   <div className="mini-button">Create</div>
                 </div>
               </div>

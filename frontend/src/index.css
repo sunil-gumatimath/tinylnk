@@ -404,7 +404,6 @@ a {
 .donut-panel,
 .activity-panel,
 .stats-hero,
-.kpi-card,
 .empty-state {
   padding: 24px;
 }
@@ -626,7 +625,7 @@ a {
 
 .stats-overview {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 16px;
 }
 
@@ -652,8 +651,9 @@ a {
 }
 
 .kpi-card {
+  padding: 16px;
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
   min-height: 100%;
 }
@@ -661,7 +661,8 @@ a {
 .kpi-card strong {
   color: var(--heading);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.4rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
 }
 
 .kpi-card span {

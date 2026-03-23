@@ -8,7 +8,7 @@ interface LinkCardProps {
   getShortUrl: (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) => string;
   onCopy: (text: string) => Promise<void>;
   onShowQr: (shortCode: string) => void;
-  onShowStats: (shortCode: string) => Promise<void>;
+  onShowStats: (shortCode: string, shortUrl: string) => Promise<void>;
   onDelete: (shortCode: string) => Promise<void>;
 }
 
@@ -35,9 +35,9 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
         </div>
 
         <div className="link-actions">
-          <Button onClick={handleCopyClick} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} />
+          <Button onClick={() => handleCopyClick()} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} />
           <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} />
-          <Button onClick={() => onShowStats(record.short_code)} icon={<BarChart2 size={15} />} />
+          <Button onClick={() => onShowStats(record.short_code, getShortUrl(record))} icon={<BarChart2 size={15} />} />
           <Popconfirm
             title="Delete this link?"
             description="This also removes its analytics history."

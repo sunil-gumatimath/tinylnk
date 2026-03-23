@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Form, Input, InputNumber } from 'antd';
-import { Check, ChevronDown, ChevronUp, Link2, ScanQrCode } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Link2, ScanQrCode, Sparkles } from 'lucide-react';
 import type { FormInstance } from 'antd/es/form';
 import type { ShortenFormValues, ShortenedURL } from '../types';
 
@@ -118,7 +118,8 @@ export function ShortenerForm({
               </div>
             </div>
           ) : (
-            <div className="empty-state panel-surface" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div className="empty-state panel-surface" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+              <Sparkles size={40} strokeWidth={1} color="#9ca3af" style={{ marginBottom: '16px' }} />
               <h3 style={{ margin: 0 }}>Ready when you are</h3>
               <p style={{ margin: '8px 0 0 0' }}>Your generated URL will appear here.</p>
             </div>
