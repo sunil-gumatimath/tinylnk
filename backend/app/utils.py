@@ -36,3 +36,5 @@ def is_valid_alias(alias: str) -> bool:
 # TODO: Add request payload validation
 
 # TODO: Add URL sanitization to strip tracking parameters
+
+# TODO: Add custom domain support for branded short URLs
