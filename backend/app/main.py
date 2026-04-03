@@ -266,3 +266,5 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
 # TODO: Add request logging middleware for monitoring and debugging
 
 # TODO: Add /health endpoint for container health checks
+
+# TODO: Add API versioning with /api/v1 prefix
