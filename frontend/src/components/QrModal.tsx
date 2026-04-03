@@ -54,3 +54,5 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
 // TODO: Add focus trap in modal
 
 // TODO: Add QR code color customization options
+
+// TODO: Add SVG download option for QR codes
