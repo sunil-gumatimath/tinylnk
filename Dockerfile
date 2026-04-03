@@ -63,3 +63,5 @@ CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # TODO: Add Docker image labels and metadata
 
 # TODO: Add Docker HEALTHCHECK instruction
+
+# TODO: Add non-root user security hardening
