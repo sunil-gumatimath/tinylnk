@@ -30,3 +30,7 @@ frontend/*.tsbuildinfo
 # IDE and editor files
 .vscode/
 .idea/
+
+# Build and cache
+*.pyc
+.pytest_cache/
