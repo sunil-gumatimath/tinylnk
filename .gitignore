@@ -26,3 +26,7 @@ frontend/*.tsbuildinfo
 
 # Pre-commit hooks
 .husky/
+
+# IDE and editor files
+.vscode/
+.idea/
