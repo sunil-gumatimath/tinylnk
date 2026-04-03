@@ -163,3 +163,5 @@ def delete_url(db: Session, short_code: str) -> bool:
 # TODO: Add search functionality for user links
 
 # TODO: Add comprehensive error handling for database operations
+
+# TODO: Add bulk URL shortening endpoint
