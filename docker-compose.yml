@@ -19,3 +19,5 @@ services:
 # TODO: Add custom bridge network configuration
 
 # TODO: Add environment file for configuration
+
+# TODO: Add restart policy for production reliability
