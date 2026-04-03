@@ -17,3 +17,5 @@ export default defineConfig({
 // TODO: Add bundle analyzer plugin
 
 // TODO: Add bundle analyzer plugin for size optimization
+
+// TODO: Add compression plugin for production builds
