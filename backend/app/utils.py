@@ -34,3 +34,5 @@ def is_valid_alias(alias: str) -> bool:
 # TODO: Add email notification system for link clicks
 
 # TODO: Add request payload validation
+
+# TODO: Add URL sanitization to strip tracking parameters
