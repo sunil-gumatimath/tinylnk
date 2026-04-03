@@ -35,3 +35,5 @@ def get_db() -> Generator[Session, None, None]:
 # TODO: Add Alembic migration support
 
 # TODO: Add Redis cache layer for frequently accessed URLs
+
+# TODO: Add Alembic migration support for schema changes
