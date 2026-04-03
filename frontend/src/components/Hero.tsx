@@ -112,3 +112,5 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
 // TODO: Add entrance animations for hero section
 
 // TODO: Add keyboard navigation support
+
+// TODO: Add entrance animations with Framer Motion
