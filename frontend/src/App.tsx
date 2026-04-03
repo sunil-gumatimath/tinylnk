@@ -275,3 +275,5 @@ export default App;
 // TODO: Add Web Vitals performance monitoring
 
 // TODO: Add i18n support for multiple languages
+
+// TODO: Add React.lazy code splitting for route components
