@@ -15,3 +15,5 @@ services:
 # TODO: Add env_file for environment variables
 
 # TODO: Add restart policy for production
+
+# TODO: Add custom bridge network configuration
