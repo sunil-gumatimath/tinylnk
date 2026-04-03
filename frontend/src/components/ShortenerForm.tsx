@@ -140,3 +140,5 @@ export function ShortenerForm({
 // TODO: Add live region for screen readers
 
 // TODO: Add React Hook Form for better form state management
+
+// TODO: Add client-side URL validation before submission
