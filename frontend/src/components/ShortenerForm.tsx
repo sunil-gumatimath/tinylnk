@@ -138,3 +138,5 @@ export function ShortenerForm({
 // TODO: Add React Hook Form for form state
 
 // TODO: Add live region for screen readers
+
+// TODO: Add React Hook Form for better form state management
