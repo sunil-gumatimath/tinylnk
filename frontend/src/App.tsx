@@ -271,3 +271,5 @@ export default App;
 // TODO: Add React error boundary for graceful error handling
 
 // TODO: Add keyboard shortcuts for power users
+
+// TODO: Add Web Vitals performance monitoring
