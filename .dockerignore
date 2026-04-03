@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+node_modules
+**/node_modules
+frontend/node_modules
+frontend/node_modules/.bin
+dist
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+urlshortener.db
+data/
