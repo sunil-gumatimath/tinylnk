@@ -42,3 +42,5 @@ class ClickEvent(Base):
 # TODO: Add link categories and tags
 
 # TODO: Add password protection field for private links
+
+# TODO: Add user_id foreign key for multi-user support
