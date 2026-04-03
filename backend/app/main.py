@@ -262,3 +262,5 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
 # TODO: Add security headers middleware
 
 # TODO: Add gzip compression for responses
+
+# TODO: Add request logging middleware for monitoring and debugging
