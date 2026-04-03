@@ -94,3 +94,5 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
 // TODO: Add infinite scroll for large link lists
 
 // TODO: Add empty state illustration for no links
+
+// TODO: Add link preview with Open Graph metadata
