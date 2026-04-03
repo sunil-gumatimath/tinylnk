@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.db
+.env
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+
+# Data directory
+data/
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+
+# Local Codex config
+.claude/
+.collaborator
+
+# CI/CD
+.env
+*.log
+
+# Pre-commit hooks
+.husky/
