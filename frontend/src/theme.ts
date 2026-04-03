@@ -65,3 +65,5 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
 // TODO: Add high contrast mode for accessibility
 
 // TODO: Add high contrast mode for accessibility
+
+// TODO: Add WCAG AA color contrast verification
