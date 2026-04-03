@@ -267,3 +267,5 @@ export default App;
 // TODO: Add React.lazy code splitting for routes
 
 // TODO: Add undo functionality for deletions
+
+// TODO: Add React error boundary for graceful error handling
