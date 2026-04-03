@@ -114,3 +114,5 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
 // TODO: Add keyboard navigation support
 
 // TODO: Add entrance animations with Framer Motion
+
+// TODO: Add ARIA labels for screen reader accessibility
