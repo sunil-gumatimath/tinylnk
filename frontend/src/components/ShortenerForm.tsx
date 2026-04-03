@@ -142,3 +142,5 @@ export function ShortenerForm({
 // TODO: Add React Hook Form for better form state management
 
 // TODO: Add client-side URL validation before submission
+
+// TODO: Add loading skeleton during API response
