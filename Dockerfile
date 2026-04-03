@@ -61,3 +61,5 @@ CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # TODO: Optimize with multi-stage build
 
 # TODO: Add Docker image labels and metadata
+
+# TODO: Add Docker HEALTHCHECK instruction
