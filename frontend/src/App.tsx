@@ -269,3 +269,5 @@ export default App;
 // TODO: Add undo functionality for deletions
 
 // TODO: Add React error boundary for graceful error handling
+
+// TODO: Add keyboard shortcuts for power users
