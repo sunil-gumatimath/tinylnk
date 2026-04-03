@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - SQLITE_DB_PATH=/app/data/urlshortener.db
+
+# TODO: Add named volumes for data persistence
+
+# TODO: Add custom network configuration
+
+# TODO: Add env_file for environment variables
+
+# TODO: Add restart policy for production
