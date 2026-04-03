@@ -61,3 +61,5 @@ class URLStats(BaseModel):
 # TODO: Add custom URL validation rules
 
 # TODO: Add custom URL format validation with regex
+
+# TODO: Add pagination schema for list endpoints
