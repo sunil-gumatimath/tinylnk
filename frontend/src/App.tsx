@@ -273,3 +273,5 @@ export default App;
 // TODO: Add keyboard shortcuts for power users
 
 // TODO: Add Web Vitals performance monitoring
+
+// TODO: Add i18n support for multiple languages
