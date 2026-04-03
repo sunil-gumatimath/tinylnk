@@ -90,3 +90,5 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
 // TODO: Add delete confirmation dialog
 
 // TODO: Add native Web Share API integration
+
+// TODO: Add infinite scroll for large link lists
