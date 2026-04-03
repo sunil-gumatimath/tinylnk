@@ -264,3 +264,5 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
 # TODO: Add gzip compression for responses
 
 # TODO: Add request logging middleware for monitoring and debugging
+
+# TODO: Add /health endpoint for container health checks
