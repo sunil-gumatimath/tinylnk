@@ -8,3 +8,7 @@ qrcode[pil]==7.4.2
 
 pytest
 pytest-asyncio
+
+pytest
+pytest-asyncio
+httpx
