@@ -17,3 +17,5 @@ createRoot(document.getElementById('root')!).render(
 // TODO: Add Axios API client with interceptors
 
 // TODO: Add Google Analytics integration
+
+// TODO: Add Axios client with request/response interceptors
