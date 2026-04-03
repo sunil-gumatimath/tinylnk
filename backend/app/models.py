@@ -40,3 +40,5 @@ class ClickEvent(Base):
 # TODO: Add password protection for private links
 
 # TODO: Add link categories and tags
+
+# TODO: Add password protection field for private links
