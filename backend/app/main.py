@@ -1,5 +1,6 @@
 """FastAPI URL Shortener — Main Application."""
 
+import html
 import os
 import io
 import secrets
@@ -39,6 +40,12 @@ ALLOWED_ORIGINS = os.getenv(
     "TINYLNK_CORS_ORIGINS", "http://localhost:5173,http://localhost:8000"
 ).split(",")
 
+# Optional: show a warning page before redirecting (default: disabled)
+REDIRECT_WARNING = os.getenv("TINYLNK_REDIRECT_WARNING", "false").lower() == "true"
+
+# Optional: require admin key for /api/recent (default: disabled)
+PROTECT_RECENT = os.getenv("TINYLNK_PROTECT_RECENT", "false").lower() == "true"
+
 app = FastAPI(
     title="tinylnk",
     description="A fast and modern URL shortener API",
@@ -66,6 +73,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 
 
@@ -116,6 +124,61 @@ RESERVED_ALIASES = {
     "shorten",
     "stats",
 }
+
+
+# ─── Helpers ─────────────────────────────────────────────
+
+
+def _interstitial_page(target_url: str) -> str:
+    """Render a warning page before redirecting to an external URL."""
+    safe_url = html.escape(target_url)
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Redirecting — tinylnk</title>
+<meta http-equiv="refresh" content="5;url={safe_url}">
+<style>
+body{{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;
+display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.c{{background:#1a1a1a;border:1px solid #333;border-radius:16px;padding:2.5rem;
+max-width:520px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4)}}
+h2{{margin-top:0;font-size:1.4rem}}
+.u{{word-break:break-all;background:#111;padding:.75rem 1rem;border-radius:8px;
+font-family:monospace;font-size:.85rem;color:#60a5fa;margin:1.25rem 0;text-align:left}}
+a.b{{display:inline-block;background:#2563eb;color:#fff;padding:.65rem 1.75rem;
+border-radius:8px;text-decoration:none;font-weight:500;transition:background .15s}}
+a.b:hover{{background:#1d4ed8}}
+.s{{color:#666;font-size:.8rem;margin-top:1.25rem}}
+</style></head><body><div class="c">
+<h2>\u26a0\ufe0f You are leaving tinylnk</h2>
+<p>You will be redirected to an external site:</p>
+<div class="u">{safe_url}</div>
+<a href="{safe_url}" class="b">Continue \u2192</a>
+<p class="s">Auto-redirecting in 5 seconds\u2026</p>
+</div></body></html>"""
+
+
+# Simple bounded cache for QR images (avoids repeated CPU-heavy generation)
+_qr_cache: dict[str, bytes] = {}
+_QR_CACHE_MAX = 500
+
+
+def _generate_qr(short_url: str) -> bytes:
+    """Generate (or retrieve cached) QR PNG bytes for a short URL."""
+    if short_url in _qr_cache:
+        return _qr_cache[short_url]
+
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(short_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    data = buf.getvalue()
+
+    if len(_qr_cache) >= _QR_CACHE_MAX:
+        _qr_cache.pop(next(iter(_qr_cache)))  # evict oldest
+    _qr_cache[short_url] = data
+    return data
 
 
 # ─── Routes ──────────────────────────────────────────────
@@ -224,8 +287,16 @@ async def get_stats(short_code: str, request: Request, db: Session = Depends(get
 
 @app.get("/api/recent", response_model=list[schemas.URLResponse])
 @limiter.limit("60/minute")
-async def get_recent(request: Request, db: Session = Depends(get_db)):
-    """Get recently created URLs."""
+async def get_recent(
+    request: Request,
+    x_admin_key: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Get recently created URLs (optionally protected via TINYLNK_PROTECT_RECENT)."""
+    if PROTECT_RECENT:
+        if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
+            raise HTTPException(status_code=403, detail="Admin key required.")
+
     urls = crud.get_recent_urls(db)
     base_url = str(request.base_url).rstrip("/")
     return [
@@ -293,13 +364,17 @@ async def redirect_to_url(
         ip_address=anonymize_ip(request.client.host if request.client else None),
     )
 
+    # Optionally show an interstitial warning page before redirecting
+    if REDIRECT_WARNING:
+        return HTMLResponse(content=_interstitial_page(url.original_url))
+
     return RedirectResponse(url=url.original_url, status_code=302)
 
 
 @app.get("/api/qr/{short_code}")
 @limiter.limit("30/minute")
 async def get_qr_code(short_code: str, request: Request, db: Session = Depends(get_db)):
-    """Generate a QR code for a short URL."""
+    """Generate a QR code for a short URL (cached)."""
     url = crud.get_url_by_code(db, short_code)
     if not url:
         raise HTTPException(status_code=404, detail="Short URL not found.")
@@ -308,15 +383,7 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
     code = url.custom_alias or url.short_code
     short_url = f"{base_url}/{code}"
 
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(short_url)
-    qr.make(fit=True)
-
-    img = qr.make_image(fill_color="black", back_color="white")
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format="PNG")
-
-    return Response(content=img_byte_arr.getvalue(), media_type="image/png")
+    return Response(content=_generate_qr(short_url), media_type="image/png")
 
 
 @app.get("/api/health")

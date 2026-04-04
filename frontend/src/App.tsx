@@ -29,13 +29,19 @@ function App() {
 
   const currentHost = window.location.origin;
 
+  /** Build headers object, attaching admin key if stored. */
+  const authHeaders = (): Record<string, string> => {
+    const key = localStorage.getItem('tinylnk_admin_key');
+    return key ? { 'X-Admin-Key': key } : {};
+  };
+
   const getShortUrl = (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) =>
     record.short_url || `${currentHost}/${record.short_code}`;
 
   const fetchRecentLinks = async () => {
     setTableLoading(true);
     try {
-      const response = await fetch('/api/recent');
+      const response = await fetch('/api/recent', { headers: authHeaders() });
       if (!response.ok) {
         message.error('Could not load recent links.');
         return;
