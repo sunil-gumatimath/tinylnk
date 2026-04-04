@@ -2,7 +2,7 @@
 
 > A self-hosted, full-stack URL shortener with built-in analytics and link management.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Open Source](https://img.shields.io/badge/Open%20Source-Free%20to%20use-brightgreen.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![React](https://img.shields.io/badge/react-19-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)
@@ -72,8 +72,9 @@ The dev server proxies API requests to the backend automatically.
 | `POST` | `/api/shorten` | Create a shortened URL |
 | `GET` | `/api/stats/{short_code}` | Get full analytics for a link |
 | `GET` | `/api/recent` | Get the 20 most recent links |
-| `DELETE` | `/api/urls/{short_code}` | Delete a short URL |
+| `DELETE` | `/api/urls/{short_code}` | Delete a short URL (requires `X-Admin-Key` header) |
 | `GET` | `/api/qr/{short_code}` | Download QR code as PNG |
+| `GET` | `/api/health` | Health check |
 | `GET` | `/{short_code}` | Redirect to the original URL |
 
 ### Create Short URL
@@ -98,9 +99,15 @@ curl http://localhost:8000/api/stats/{short_code}
 
 ## Configuration
 
+Copy `.env.example` to `.env` and customise:
+
 | Environment Variable | Default | Description |
 |---|---|---|
 | `SQLITE_DB_PATH` | `urlshortener.db` | Path to the SQLite database file |
+| `TINYLNK_ADMIN_KEY` | *(auto-generated)* | **Required for production.** Secret key for delete operations. If unset, an ephemeral key is printed to stdout on startup — it will be lost on restart. |
+| `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
+| `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
+| `TINYLNK_PROTECT_RECENT` | `false` | Require admin key to access `/api/recent` |
 
 ## Project Structure
 
@@ -133,38 +140,28 @@ tinylnk/
 
 ## Architecture
 
-- **Short Code Generation** -- Uses Base62 encoding of `(database_id + 1000)` for deterministic, collision-free codes. The offset ensures codes are never extremely short.
+- **Short Code Generation** -- Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** -- In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
-- **Privacy-Friendly** -- All analytics are stored locally with no third-party tracking.
-- **Rate Limiting** -- SlowAPI enforces 30 requests per minute on the shorten endpoint to prevent abuse.
+- **Privacy-Friendly** -- IP addresses are anonymized (last octet zeroed) before storage. All analytics are stored locally with no third-party tracking.
+- **Rate Limiting** -- SlowAPI enforces per-endpoint rate limits (30/min shorten, 60/min stats/recent, 20/min delete).
 
 ## Security
 
-- URL validation ensures only `http://` and `https://` schemes are accepted
-- Self-referencing URLs (pointing to the tinylnk instance) are rejected
-- Reserved aliases (`api`, `assets`, `docs`, `stats`, etc.) are protected
-- Rate limiting prevents endpoint abuse
+- **Admin key authentication** on destructive endpoints (`DELETE /api/urls/{code}`) via `X-Admin-Key` header
+- **CORS lockdown** — only configured origins can make cross-origin requests
+- **Path traversal protection** on static asset serving
+- **SSRF prevention** — blocks shortening of internal/private network URLs (`10.x`, `169.254.x`, `localhost`, etc.)
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, `Referrer-Policy`
+- **Request size limiting** — rejects payloads over 1 MB
+- **IP anonymization** — visitor IPs are truncated before database storage (GDPR-friendly)
+- **Rate limiting** on all API endpoints
+- **Reserved alias protection** — case-insensitive check prevents hijacking system routes
+- **Optional redirect interstitial** — warn users before navigating to external sites
+- **QR code caching** — bounded in-memory cache prevents CPU exhaustion from repeated generation
 - Runs as a non-root user in Docker
 
-## Roadmap
-
-- [ ] User authentication with JWT
-- [ ] Custom domain support for branded links
-- [ ] Advanced analytics dashboard
-- [ ] Bulk URL import/export
-- [ ] Password-protected links
-- [ ] API versioning (v1/v2)
-- [ ] Redis caching layer
-- [ ] Database migrations with Alembic
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+> **⚠️ Important:** Always set `TINYLNK_ADMIN_KEY` in production. If unset, a random key is generated on each startup and printed to stdout — container restarts will invalidate it.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is open-source and free to use.
