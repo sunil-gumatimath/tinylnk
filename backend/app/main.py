@@ -2,25 +2,42 @@
 
 import os
 import io
+import secrets
+
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before any os.getenv() calls
+
 import qrcode
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
 from .database import Base, engine, get_db
-from .utils import is_valid_alias
+from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
+
+# Admin API key for protected endpoints (set TINYLNK_ADMIN_KEY env var)
+ADMIN_API_KEY = os.getenv("TINYLNK_ADMIN_KEY", "")
+if not ADMIN_API_KEY:
+    ADMIN_API_KEY = secrets.token_urlsafe(32)
+    print(f"\u26a0\ufe0f  No TINYLNK_ADMIN_KEY set. Generated ephemeral key: {ADMIN_API_KEY}")
+
+# CORS origins (comma-separated env var, locked down by default)
+ALLOWED_ORIGINS = os.getenv(
+    "TINYLNK_CORS_ORIGINS", "http://localhost:5173,http://localhost:8000"
+).split(",")
 
 app = FastAPI(
     title="tinylnk",
@@ -30,11 +47,45 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-Key"],
 )
+
+
+# ─── Security Middlewares ─────────────────────────────────
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add standard security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds 1 MB."""
+
+    MAX_BODY_SIZE = 1_048_576  # 1 MB
+
+    async def dispatch(self, request: Request, call_next):
+        if request.headers.get("content-length"):
+            if int(request.headers["content-length"]) > self.MAX_BODY_SIZE:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large."},
+                )
+        return await call_next(request)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware)
 
 app.state.limiter = limiter
 
@@ -72,8 +123,11 @@ RESERVED_ALIASES = {
 
 @app.get("/assets/{file_path:path}")
 async def serve_assets(file_path: str):
-    """Serve static assets dynamically."""
-    asset_path = os.path.join(ASSETS_DIR, file_path)
+    """Serve static assets (path-traversal safe)."""
+    asset_path = os.path.realpath(os.path.join(ASSETS_DIR, file_path))
+    assets_root = os.path.realpath(ASSETS_DIR)
+    if not asset_path.startswith(assets_root + os.sep) and asset_path != assets_root:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if os.path.isfile(asset_path):
         return FileResponse(asset_path)
     raise HTTPException(status_code=404, detail="Asset not found")
@@ -103,7 +157,7 @@ async def shorten_url(
     db: Session = Depends(get_db),
 ):
     """Create a shortened URL."""
-    # Validate custom alias if provided
+    # Validate custom alias if provided (case-insensitive reserved check)
     if url_data.custom_alias:
         if url_data.custom_alias.lower() in RESERVED_ALIASES:
             raise HTTPException(
@@ -119,11 +173,18 @@ async def shorten_url(
         if existing:
             raise HTTPException(status_code=409, detail="This alias is already taken.")
 
-    # Basic URL validation
+    # URL validation — enforce http(s) scheme only
     url_str = str(url_data.url).strip()
     if not url_str.startswith(("http://", "https://")):
         url_str = "https://" + url_str
         url_data.url = url_str
+
+    # Block internal / private network targets (SSRF prevention)
+    if not is_safe_url(url_str):
+        raise HTTPException(
+            status_code=400,
+            detail="This URL target is not allowed (internal or invalid address).",
+        )
 
     base_url = str(request.base_url).rstrip("/")
     if url_str.startswith(base_url):
@@ -152,7 +213,8 @@ async def shorten_url(
 
 
 @app.get("/api/stats/{short_code}", response_model=schemas.URLStats)
-async def get_stats(short_code: str, db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def get_stats(short_code: str, request: Request, db: Session = Depends(get_db)):
     """Get click analytics for a short URL."""
     stats = crud.get_url_stats(db, short_code)
     if not stats:
@@ -161,6 +223,7 @@ async def get_stats(short_code: str, db: Session = Depends(get_db)):
 
 
 @app.get("/api/recent", response_model=list[schemas.URLResponse])
+@limiter.limit("60/minute")
 async def get_recent(request: Request, db: Session = Depends(get_db)):
     """Get recently created URLs."""
     urls = crud.get_recent_urls(db)
@@ -182,9 +245,18 @@ async def get_recent(request: Request, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/urls/{short_code}", status_code=204)
-async def delete_url_endpoint(short_code: str, db: Session = Depends(get_db)):
-    """Delete a shortened URL and its analytics."""
-    if short_code in RESERVED_ALIASES:
+@limiter.limit("20/minute")
+async def delete_url_endpoint(
+    short_code: str,
+    request: Request,
+    x_admin_key: str = Header(..., description="Admin API key"),
+    db: Session = Depends(get_db),
+):
+    """Delete a shortened URL and its analytics (requires admin key)."""
+    if not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid admin key.")
+
+    if short_code.lower() in RESERVED_ALIASES:
         raise HTTPException(status_code=400, detail="Cannot delete reserved alias.")
 
     success = crud.delete_url(db, short_code)
@@ -200,8 +272,8 @@ async def redirect_to_url(
     db: Session = Depends(get_db),
 ):
     """Redirect to the original URL and record the click."""
-    # Skip API and static routes
-    if short_code in RESERVED_ALIASES:
+    # Skip API and static routes (case-insensitive)
+    if short_code.lower() in RESERVED_ALIASES:
         raise HTTPException(status_code=404, detail="Not found.")
 
     url = crud.get_url_by_code(db, short_code)
@@ -212,19 +284,20 @@ async def redirect_to_url(
     if crud.is_url_expired(url):
         raise HTTPException(status_code=410, detail="This short URL has expired.")
 
-    # Record click
+    # Record click (IP is anonymized before storage)
     crud.record_click(
         db,
         url,
         referrer=request.headers.get("referer"),
         user_agent=request.headers.get("user-agent"),
-        ip_address=request.client.host if request.client else None,
+        ip_address=anonymize_ip(request.client.host if request.client else None),
     )
 
     return RedirectResponse(url=url.original_url, status_code=302)
 
 
 @app.get("/api/qr/{short_code}")
+@limiter.limit("30/minute")
 async def get_qr_code(short_code: str, request: Request, db: Session = Depends(get_db)):
     """Generate a QR code for a short URL."""
     url = crud.get_url_by_code(db, short_code)
@@ -245,26 +318,8 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
 
     return Response(content=img_byte_arr.getvalue(), media_type="image/png")
 
-# TODO: Add request logging middleware
 
-# TODO: Add API versioning support (v1, v2)
-
-# TODO: Configure CORS for production domains
-
-# TODO: Add /health endpoint for monitoring
-
-# TODO: Customize OpenAPI docs with project info
-
-# TODO: Add JWT authentication for user accounts
-
-# TODO: Add production-specific configuration
-
-# TODO: Add security headers middleware
-
-# TODO: Add gzip compression for responses
-
-# TODO: Add request logging middleware for monitoring and debugging
-
-# TODO: Add /health endpoint for container health checks
-
-# TODO: Add API versioning with /api/v1 prefix
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok"}

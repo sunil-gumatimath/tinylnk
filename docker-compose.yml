@@ -1,12 +1,15 @@
 services:
   app:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
     environment:
       - SQLITE_DB_PATH=/app/data/urlshortener.db
+      - TINYLNK_ADMIN_KEY=${TINYLNK_ADMIN_KEY:-}
+      - TINYLNK_CORS_ORIGINS=${TINYLNK_CORS_ORIGINS:-http://localhost:8000}
 
 # TODO: Add named volumes for data persistence
 

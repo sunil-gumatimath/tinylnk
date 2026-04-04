@@ -147,7 +147,25 @@ function App() {
 
   const handleDelete = async (shortCode: string) => {
     try {
-      const response = await fetch(`/api/urls/${shortCode}`, { method: 'DELETE' });
+      let adminKey = localStorage.getItem('tinylnk_admin_key');
+      if (!adminKey) {
+        const key = prompt('Enter admin key to delete links:');
+        if (!key) return;
+        localStorage.setItem('tinylnk_admin_key', key);
+        adminKey = key;
+      }
+
+      const response = await fetch(`/api/urls/${shortCode}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Key': adminKey },
+      });
+
+      if (response.status === 403) {
+        localStorage.removeItem('tinylnk_admin_key');
+        message.error('Invalid admin key. Please try again.');
+        return;
+      }
+
       if (!response.ok) {
         const data = await response.json();
         message.error(data.detail || 'Failed to delete link.');

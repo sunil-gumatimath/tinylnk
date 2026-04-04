@@ -1,10 +1,13 @@
 .git
 .gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
 .venv
 node_modules
 **/node_modules
 frontend/node_modules
-frontend/node_modules/.bin
+frontend/dist
 dist
 __pycache__
 *.pyc
@@ -15,3 +18,4 @@ env/
 venv/
 urlshortener.db
 data/
+.env

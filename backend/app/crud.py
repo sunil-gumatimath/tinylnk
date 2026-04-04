@@ -1,5 +1,6 @@
 """Database CRUD operations for the URL shortener."""
 
+import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -7,7 +8,6 @@ from sqlalchemy.orm import Session
 from user_agents import parse
 
 from . import models, schemas
-from .utils import encode_base62
 
 
 def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
@@ -29,10 +29,15 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     db.add(db_url)
     db.flush()  # Get the auto-generated ID
 
-    # Generate short code from the ID using Base62
-    db_url.short_code = encode_base62(
-        db_url.id + 1000
-    )  # Offset to avoid very short codes
+    # Generate a cryptographically random short code (collision-safe)
+    for _ in range(10):
+        code = secrets.token_urlsafe(6)
+        existing = db.query(models.URL).filter(models.URL.short_code == code).first()
+        if not existing:
+            db_url.short_code = code
+            break
+    else:
+        raise RuntimeError("Failed to generate unique short code after 10 attempts")
 
     db.commit()
     db.refresh(db_url)
@@ -153,17 +158,3 @@ def delete_url(db: Session, short_code: str) -> bool:
     db.delete(url)
     db.commit()
     return True
-
-# TODO: Add comprehensive error handling
-
-# TODO: Add database query optimization with indexes
-
-# TODO: Add bulk URL shortening endpoint
-
-# TODO: Add search functionality for user links
-
-# TODO: Add comprehensive error handling for database operations
-
-# TODO: Add bulk URL shortening endpoint
-
-# TODO: Add search functionality with full-text search
