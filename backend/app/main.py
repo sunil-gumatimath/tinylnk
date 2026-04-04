@@ -120,6 +120,8 @@ RESERVED_ALIASES = {
     "docs",
     "openapi.json",
     "favicon.ico",
+    "favicon.svg",
+    "icons.svg",
     "recent",
     "shorten",
     "stats",
@@ -194,6 +196,24 @@ async def serve_assets(file_path: str):
     if os.path.isfile(asset_path):
         return FileResponse(asset_path)
     raise HTTPException(status_code=404, detail="Asset not found")
+
+
+@app.get("/favicon.svg")
+async def serve_favicon():
+    """Serve the favicon from the frontend dist directory."""
+    favicon_path = os.path.join(STATIC_DIR, "favicon.svg")
+    if os.path.isfile(favicon_path):
+        return FileResponse(favicon_path, media_type="image/svg+xml")
+    raise HTTPException(status_code=404, detail="Favicon not found")
+
+
+@app.get("/icons.svg")
+async def serve_icons():
+    """Serve the icons sprite from the frontend dist directory."""
+    icons_path = os.path.join(STATIC_DIR, "icons.svg")
+    if os.path.isfile(icons_path):
+        return FileResponse(icons_path, media_type="image/svg+xml")
+    raise HTTPException(status_code=404, detail="Icons not found")
 
 
 @app.get("/", response_class=HTMLResponse)
