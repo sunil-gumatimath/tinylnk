@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Form, Layout, Spin, Typography, message } from 'antd';
 import { RefreshCw, FolderOpen, Sun, Moon } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
@@ -14,6 +14,7 @@ const { Title, Paragraph } = Typography;
 
 function App() {
   const [form] = Form.useForm<ShortenFormValues>();
+  const [adminKey, setAdminKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -29,25 +30,57 @@ function App() {
 
   const currentHost = window.location.origin;
 
-  /** Build headers object, attaching admin key if stored. */
-  const authHeaders = (): Record<string, string> => {
-    const key = localStorage.getItem('tinylnk_admin_key');
+  /** Build headers object for admin-protected requests. */
+  const authHeaders = (key: string | null = adminKey): Record<string, string> => {
     return key ? { 'X-Admin-Key': key } : {};
   };
 
   const getShortUrl = (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) =>
     record.short_url || `${currentHost}/${record.short_code}`;
 
-  const fetchRecentLinks = async () => {
+  const promptForAdminKey = (reason: 'dashboard' | 'stats' | 'delete'): string | null => {
+    const promptMessage = {
+      dashboard: 'Enter admin key to unlock link management:',
+      stats: 'Enter admin key to view analytics:',
+      delete: 'Enter admin key to delete links:',
+    }[reason];
+
+    const key = window.prompt(promptMessage)?.trim() || '';
+    if (!key) {
+      return null;
+    }
+
+    setAdminKey(key);
+    return key;
+  };
+
+  const clearAdminSession = () => {
+    setAdminKey(null);
+    setRecentLinks([]);
+  };
+
+  const fetchRecentLinks = async (providedKey?: string) => {
+    const key = providedKey ?? adminKey;
+    if (!key) {
+      return;
+    }
+
     setTableLoading(true);
     try {
-      const response = await fetch('/api/recent', { headers: authHeaders() });
+      const response = await fetch('/api/recent', { headers: authHeaders(key) });
+      if (response.status === 403) {
+        clearAdminSession();
+        message.error('Invalid admin key. Please try again.');
+        return;
+      }
+
       if (!response.ok) {
         message.error('Could not load recent links.');
         return;
       }
 
       const data = await response.json();
+      setAdminKey(key);
       setRecentLinks(data);
     } catch (error) {
       console.error('Failed to fetch recent links', error);
@@ -56,10 +89,6 @@ function App() {
       setTableLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchRecentLinks();
-  }, []);
 
   const validateUrlInput = async (_rule: unknown, value: string) => {
     if (!value) return Promise.resolve();
@@ -117,7 +146,9 @@ function App() {
       setResult(data);
       form.resetFields();
       message.success('URL shortened successfully.');
-      await fetchRecentLinks();
+      if (adminKey) {
+        await fetchRecentLinks(adminKey);
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
       message.error(errorMessage);
@@ -127,13 +158,25 @@ function App() {
   };
 
   const showStats = async (shortCode: string, shortUrl: string) => {
+    const key = adminKey ?? promptForAdminKey('stats');
+    if (!key) {
+      return;
+    }
+
     setCurrentShortUrl(shortUrl);
     setStatsModalVisible(true);
     setStatsLoading(true);
     setCurrentStats(null);
 
     try {
-      const response = await fetch(`/api/stats/${shortCode}`);
+      const response = await fetch(`/api/stats/${shortCode}`, { headers: authHeaders(key) });
+      if (response.status === 403) {
+        clearAdminSession();
+        message.error('Invalid admin key. Please try again.');
+        setStatsModalVisible(false);
+        return;
+      }
+
       if (!response.ok) {
         message.error('Failed to fetch stats.');
         setStatsModalVisible(false);
@@ -153,21 +196,16 @@ function App() {
 
   const handleDelete = async (shortCode: string) => {
     try {
-      let adminKey = localStorage.getItem('tinylnk_admin_key');
-      if (!adminKey) {
-        const key = prompt('Enter admin key to delete links:');
-        if (!key) return;
-        localStorage.setItem('tinylnk_admin_key', key);
-        adminKey = key;
-      }
+      const key = adminKey ?? promptForAdminKey('delete');
+      if (!key) return;
 
       const response = await fetch(`/api/urls/${shortCode}`, {
         method: 'DELETE',
-        headers: { 'X-Admin-Key': adminKey },
+        headers: authHeaders(key),
       });
 
       if (response.status === 403) {
-        localStorage.removeItem('tinylnk_admin_key');
+        clearAdminSession();
         message.error('Invalid admin key. Please try again.');
         return;
       }
@@ -179,11 +217,20 @@ function App() {
       }
 
       message.success('Link deleted successfully.');
-      await fetchRecentLinks();
+      await fetchRecentLinks(key);
     } catch (error) {
       console.error('Failed to delete link', error);
       message.error('An error occurred while deleting.');
     }
+  };
+
+  const unlockDashboard = async () => {
+    const key = promptForAdminKey('dashboard');
+    if (!key) {
+      return;
+    }
+
+    await fetchRecentLinks(key);
   };
 
   const showQrCode = (shortCode: string) => {
@@ -229,8 +276,8 @@ function App() {
                 Monitor real-time engagement, copy your branded URLs for immediate sharing, or manage active campaigns.
               </Paragraph>
             </div>
-            <Button onClick={fetchRecentLinks} loading={tableLoading} icon={<RefreshCw size={16} />}>
-              Refresh
+            <Button onClick={adminKey ? () => fetchRecentLinks() : unlockDashboard} loading={tableLoading} icon={<RefreshCw size={16} />}>
+              {adminKey ? 'Refresh' : 'Unlock'}
             </Button>
           </div>
 
@@ -238,6 +285,15 @@ function App() {
             <div className="empty-state panel-surface">
               <Spin />
               <span>Loading active links...</span>
+            </div>
+          ) : !adminKey ? (
+            <div className="empty-state panel-surface">
+              <FolderOpen size={44} strokeWidth={1} color="var(--text-muted)" style={{ marginBottom: '16px' }} />
+              <h3>Dashboard locked</h3>
+              <p>Enter the admin key to view recent links, analytics, and destructive actions for this tinylnk instance.</p>
+              <Button type="primary" onClick={unlockDashboard}>
+                Unlock dashboard
+              </Button>
             </div>
           ) : recentLinks.length === 0 ? (
             <div className="empty-state panel-surface">

@@ -43,9 +43,6 @@ ALLOWED_ORIGINS = os.getenv(
 # Optional: show a warning page before redirecting (default: disabled)
 REDIRECT_WARNING = os.getenv("TINYLNK_REDIRECT_WARNING", "false").lower() == "true"
 
-# Optional: require admin key for /api/recent (default: disabled)
-PROTECT_RECENT = os.getenv("TINYLNK_PROTECT_RECENT", "false").lower() == "true"
-
 app = FastAPI(
     title="tinylnk",
     description="A fast and modern URL shortener API",
@@ -156,6 +153,12 @@ a.b:hover{{background:#1d4ed8}}
 <a href="{safe_url}" class="b">Continue \u2192</a>
 <p class="s">Auto-redirecting in 5 seconds\u2026</p>
 </div></body></html>"""
+
+
+def _require_admin_key(x_admin_key: str | None) -> None:
+    """Require a valid admin key for sensitive management endpoints."""
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
+        raise HTTPException(status_code=403, detail="Admin key required.")
 
 
 # Simple bounded cache for QR images (avoids repeated CPU-heavy generation)
@@ -297,8 +300,14 @@ async def shorten_url(
 
 @app.get("/api/stats/{short_code}", response_model=schemas.URLStats)
 @limiter.limit("60/minute")
-async def get_stats(short_code: str, request: Request, db: Session = Depends(get_db)):
+async def get_stats(
+    short_code: str,
+    request: Request,
+    x_admin_key: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
     """Get click analytics for a short URL."""
+    _require_admin_key(x_admin_key)
     stats = crud.get_url_stats(db, short_code)
     if not stats:
         raise HTTPException(status_code=404, detail="Short URL not found.")
@@ -312,11 +321,8 @@ async def get_recent(
     x_admin_key: str | None = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Get recently created URLs (optionally protected via TINYLNK_PROTECT_RECENT)."""
-    if PROTECT_RECENT:
-        if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
-            raise HTTPException(status_code=403, detail="Admin key required.")
-
+    """Get recently created URLs (admin only)."""
+    _require_admin_key(x_admin_key)
     urls = crud.get_recent_urls(db)
     base_url = str(request.base_url).rstrip("/")
     return [

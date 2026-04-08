@@ -70,8 +70,8 @@ The dev server proxies API requests to the backend automatically.
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/shorten` | Create a shortened URL |
-| `GET` | `/api/stats/{short_code}` | Get full analytics for a link |
-| `GET` | `/api/recent` | Get the 20 most recent links |
+| `GET` | `/api/stats/{short_code}` | Get full analytics for a link (requires `X-Admin-Key` header) |
+| `GET` | `/api/recent` | Get the 20 most recent links (requires `X-Admin-Key` header) |
 | `DELETE` | `/api/urls/{short_code}` | Delete a short URL (requires `X-Admin-Key` header) |
 | `GET` | `/api/qr/{short_code}` | Download QR code as PNG |
 | `GET` | `/api/health` | Health check |
@@ -94,7 +94,8 @@ curl -X POST http://localhost:8000/api/shorten \
 ### Get Link Statistics
 
 ```bash
-curl http://localhost:8000/api/stats/{short_code}
+curl http://localhost:8000/api/stats/{short_code} \
+  -H "X-Admin-Key: your-admin-key"
 ```
 
 ## Configuration
@@ -107,7 +108,6 @@ Copy `.env.example` to `.env` and customise:
 | `TINYLNK_ADMIN_KEY` | *(auto-generated)* | **Required for production.** Secret key for delete operations. If unset, an ephemeral key is printed to stdout on startup — it will be lost on restart. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
-| `TINYLNK_PROTECT_RECENT` | `false` | Require admin key to access `/api/recent` |
 
 ## Project Structure
 
@@ -147,7 +147,7 @@ tinylnk/
 
 ## Security
 
-- **Admin key authentication** on destructive endpoints (`DELETE /api/urls/{code}`) via `X-Admin-Key` header
+- **Admin key authentication** on management and analytics endpoints (`GET /api/recent`, `GET /api/stats/{code}`, `DELETE /api/urls/{code}`) via `X-Admin-Key` header
 - **CORS lockdown** — only configured origins can make cross-origin requests
 - **Path traversal protection** on static asset serving
 - **SSRF prevention** — blocks shortening of internal/private network URLs (`10.x`, `169.254.x`, `localhost`, etc.)
