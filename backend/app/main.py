@@ -10,7 +10,8 @@ load_dotenv()  # Load .env before any os.getenv() calls
 
 import qrcode
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from datetime import datetime, timezone
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from slowapi import Limiter
@@ -53,7 +54,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-Admin-Key"],
 )
 
@@ -166,24 +167,42 @@ _qr_cache: dict[str, bytes] = {}
 _QR_CACHE_MAX = 500
 
 
-def _generate_qr(short_url: str) -> bytes:
+def _generate_qr(
+    short_url: str,
+    fg_color: str = "black",
+    bg_color: str = "white",
+) -> bytes:
     """Generate (or retrieve cached) QR PNG bytes for a short URL."""
-    if short_url in _qr_cache:
-        return _qr_cache[short_url]
+    cache_key = f"{short_url}:{fg_color}:{bg_color}"
+    if cache_key in _qr_cache:
+        return _qr_cache[cache_key]
 
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
     qr.add_data(short_url)
     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image(fill_color=fg_color, back_color=bg_color)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     data = buf.getvalue()
 
     if len(_qr_cache) >= _QR_CACHE_MAX:
         _qr_cache.pop(next(iter(_qr_cache)))  # evict oldest
-    _qr_cache[short_url] = data
+    _qr_cache[cache_key] = data
     return data
+
+
+def _parse_date(date_str: str | None) -> datetime | None:
+    """Parse an ISO date string to a datetime object."""
+    if not date_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
 
 
 # ─── Routes ──────────────────────────────────────────────
@@ -298,20 +317,117 @@ async def shorten_url(
     )
 
 
+@app.put("/api/urls/{short_code}", response_model=schemas.URLResponse)
+@limiter.limit("30/minute")
+async def update_url_endpoint(
+    short_code: str,
+    request: Request,
+    update_data: schemas.URLUpdate,
+    x_admin_key: str = Header(..., description="Admin API key"),
+    db: Session = Depends(get_db),
+):
+    """Update a shortened URL's properties (requires admin key)."""
+    if not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid admin key.")
+
+    url = crud.get_url_by_code(db, short_code)
+    if not url:
+        raise HTTPException(status_code=404, detail="Short URL not found.")
+
+    # Validate new URL if provided
+    if update_data.original_url:
+        url_str = str(update_data.original_url).strip()
+        if not url_str.startswith(("http://", "https://")):
+            url_str = "https://" + url_str
+            update_data.original_url = url_str
+        if not is_safe_url(url_str):
+            raise HTTPException(
+                status_code=400,
+                detail="This URL target is not allowed.",
+            )
+
+    # Validate new alias if provided
+    if update_data.custom_alias:
+        if update_data.custom_alias.lower() in RESERVED_ALIASES:
+            raise HTTPException(
+                status_code=400, detail="This alias is reserved."
+            )
+        if not is_valid_alias(update_data.custom_alias):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid alias. Use 3-50 alphanumeric characters, hyphens, or underscores.",
+            )
+
+    try:
+        updated = crud.update_url(db, url, update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    base_url = str(request.base_url).rstrip("/")
+    code = updated.custom_alias or updated.short_code
+
+    return schemas.URLResponse(
+        id=updated.id,
+        original_url=updated.original_url,
+        short_code=code,
+        short_url=f"{base_url}/{code}",
+        created_at=updated.created_at,
+        expires_at=updated.expires_at,
+        max_clicks=updated.max_clicks,
+        tag=updated.tag,
+        click_count=updated.click_count,
+    )
+
+
 @app.get("/api/stats/{short_code}", response_model=schemas.URLStats)
 @limiter.limit("60/minute")
 async def get_stats(
     short_code: str,
     request: Request,
     x_admin_key: str | None = Header(None),
+    start_date: str | None = Query(None, description="ISO date string for range start"),
+    end_date: str | None = Query(None, description="ISO date string for range end"),
     db: Session = Depends(get_db),
 ):
-    """Get click analytics for a short URL."""
+    """Get click analytics for a short URL, optionally filtered by date range."""
     _require_admin_key(x_admin_key)
-    stats = crud.get_url_stats(db, short_code)
+
+    parsed_start = _parse_date(start_date)
+    parsed_end = _parse_date(end_date)
+
+    stats = crud.get_url_stats(db, short_code, parsed_start, parsed_end)
     if not stats:
         raise HTTPException(status_code=404, detail="Short URL not found.")
     return stats
+
+
+@app.get("/api/stats/{short_code}/export")
+@limiter.limit("30/minute")
+async def export_stats(
+    short_code: str,
+    request: Request,
+    x_admin_key: str | None = Header(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Export click analytics as CSV (requires admin key)."""
+    _require_admin_key(x_admin_key)
+
+    parsed_start = _parse_date(start_date)
+    parsed_end = _parse_date(end_date)
+
+    csv_data = crud.export_stats_csv(db, short_code, parsed_start, parsed_end)
+    if csv_data is None:
+        raise HTTPException(status_code=404, detail="Short URL not found.")
+
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="tinylnk_{short_code}_analytics.csv"'
+        },
+    )
 
 
 @app.get("/api/recent", response_model=list[schemas.URLResponse])
@@ -319,11 +435,13 @@ async def get_stats(
 async def get_recent(
     request: Request,
     x_admin_key: str | None = Header(None),
+    search: str | None = Query(None, description="Search by URL, alias, or short code"),
+    tag: str | None = Query(None, description="Filter by tag"),
     db: Session = Depends(get_db),
 ):
-    """Get recently created URLs (admin only)."""
+    """Get recently created URLs with optional search and tag filtering (admin only)."""
     _require_admin_key(x_admin_key)
-    urls = crud.get_recent_urls(db)
+    urls = crud.get_recent_urls(db, search=search, tag=tag)
     base_url = str(request.base_url).rstrip("/")
     return [
         schemas.URLResponse(
@@ -339,6 +457,19 @@ async def get_recent(
         )
         for u in urls
     ]
+
+
+@app.get("/api/tags", response_model=list[str])
+@limiter.limit("60/minute")
+async def get_tags(
+    request: Request,
+    x_admin_key: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Get all unique tags (admin only)."""
+    _require_admin_key(x_admin_key)
+    rows = db.query(models.URL.tag).filter(models.URL.tag.isnot(None)).distinct().all()
+    return [row[0] for row in rows if row[0]]
 
 
 @app.delete("/api/urls/{short_code}", status_code=204)
@@ -399,8 +530,14 @@ async def redirect_to_url(
 
 @app.get("/api/qr/{short_code}")
 @limiter.limit("30/minute")
-async def get_qr_code(short_code: str, request: Request, db: Session = Depends(get_db)):
-    """Generate a QR code for a short URL (cached)."""
+async def get_qr_code(
+    short_code: str,
+    request: Request,
+    fg: str = Query("black", description="Foreground color (hex without #, or color name)"),
+    bg: str = Query("white", description="Background color (hex without #, or color name)"),
+    db: Session = Depends(get_db),
+):
+    """Generate a QR code for a short URL with customizable colors."""
     url = crud.get_url_by_code(db, short_code)
     if not url:
         raise HTTPException(status_code=404, detail="Short URL not found.")
@@ -409,7 +546,11 @@ async def get_qr_code(short_code: str, request: Request, db: Session = Depends(g
     code = url.custom_alias or url.short_code
     short_url = f"{base_url}/{code}"
 
-    return Response(content=_generate_qr(short_url), media_type="image/png")
+    # Convert hex values (e.g. "1d4ed8" → "#1d4ed8")
+    fg_color = f"#{fg}" if len(fg) == 6 and all(c in "0123456789abcdefABCDEF" for c in fg) else fg
+    bg_color = f"#{bg}" if len(bg) == 6 and all(c in "0123456789abcdefABCDEF" for c in bg) else bg
+
+    return Response(content=_generate_qr(short_url, fg_color, bg_color), media_type="image/png")
 
 
 @app.get("/api/health")
