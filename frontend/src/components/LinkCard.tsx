@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Popconfirm, Tag } from 'antd';
-import { BarChart2, Calendar, Check, Copy, ExternalLink, QrCode, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { BarChart2, Calendar, Check, Copy, ExternalLink, Pencil, QrCode, Share2, Tag as TagIcon, Trash2 } from 'lucide-react';
 import type { ShortenedURL } from '../types';
 
 interface LinkCardProps {
@@ -10,9 +10,11 @@ interface LinkCardProps {
   onShowQr: (shortCode: string) => void;
   onShowStats: (shortCode: string, shortUrl: string) => Promise<void>;
   onDelete: (shortCode: string) => Promise<void>;
+  onEdit: (record: ShortenedURL) => void;
+  onShare: (shortUrl: string) => void;
 }
 
-export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, onDelete }: LinkCardProps) {
+export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, onDelete, onEdit, onShare }: LinkCardProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyClick = async () => {
@@ -35,9 +37,11 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
         </div>
 
         <div className="link-actions">
-          <Button onClick={() => handleCopyClick()} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} />
-          <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} />
-          <Button onClick={() => onShowStats(record.short_code, getShortUrl(record))} icon={<BarChart2 size={15} />} />
+          <Button onClick={() => handleCopyClick()} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} title="Copy link" />
+          <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} title="QR code" />
+          <Button onClick={() => onShowStats(record.short_code, getShortUrl(record))} icon={<BarChart2 size={15} />} title="Analytics" />
+          <Button onClick={() => onEdit(record)} icon={<Pencil size={15} />} title="Edit" />
+          <Button onClick={() => onShare(getShortUrl(record))} icon={<Share2 size={15} />} title="Share" />
           <Popconfirm
             title="Delete this link?"
             description="This also removes its analytics history."
@@ -46,7 +50,7 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
             placement="topRight"
             onConfirm={() => onDelete(record.short_code)}
           >
-            <Button danger icon={<Trash2 size={15} />} />
+            <Button danger icon={<Trash2 size={15} />} title="Delete" />
           </Popconfirm>
         </div>
       </div>
@@ -74,25 +78,3 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
     </article>
   );
 }
-
-// TODO: Add copy to clipboard functionality
-
-// TODO: Add native share API integration
-
-// TODO: Add link preview with Open Graph data
-
-// TODO: Add infinite scroll for link list
-
-// TODO: Add skeleton loading state
-
-// TODO: Add empty state illustration
-
-// TODO: Add delete confirmation dialog
-
-// TODO: Add native Web Share API integration
-
-// TODO: Add infinite scroll for large link lists
-
-// TODO: Add empty state illustration for no links
-
-// TODO: Add link preview with Open Graph metadata
