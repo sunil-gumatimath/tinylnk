@@ -1,5 +1,7 @@
 """Database CRUD operations for the URL shortener."""
 
+import csv
+import io
 import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -52,6 +54,46 @@ def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
     return url
 
 
+def update_url(
+    db: Session,
+    url: models.URL,
+    data: schemas.URLUpdate,
+) -> models.URL:
+    """Update an existing URL's editable fields."""
+    if data.original_url is not None:
+        url.original_url = str(data.original_url)
+
+    if data.custom_alias is not None:
+        # Check uniqueness (skip if same as current)
+        if data.custom_alias != url.custom_alias:
+            existing = (
+                db.query(models.URL)
+                .filter(models.URL.custom_alias == data.custom_alias)
+                .first()
+            )
+            if existing and existing.id != url.id:
+                raise ValueError("This alias is already taken.")
+            url.custom_alias = data.custom_alias or None
+
+    if data.tag is not None:
+        url.tag = data.tag or None
+
+    if data.expires_in_hours is not None:
+        if data.expires_in_hours <= 0:
+            url.expires_at = None  # Clear expiration
+        else:
+            url.expires_at = datetime.now(timezone.utc) + timedelta(
+                hours=data.expires_in_hours
+            )
+
+    if data.max_clicks is not None:
+        url.max_clicks = data.max_clicks if data.max_clicks > 0 else None
+
+    db.commit()
+    db.refresh(url)
+    return url
+
+
 def record_click(
     db: Session,
     url: models.URL,
@@ -71,18 +113,33 @@ def record_click(
     db.commit()
 
 
-def get_url_stats(db: Session, short_code: str) -> dict | None:
-    """Get analytics for a specific short URL."""
+def get_url_stats(
+    db: Session,
+    short_code: str,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> dict | None:
+    """Get analytics for a specific short URL, optionally filtered by date range."""
     url = get_url_by_code(db, short_code)
     if not url:
         return None
 
-    clicks = (
+    query = (
         db.query(models.ClickEvent)
         .filter(models.ClickEvent.url_id == url.id)
-        .order_by(models.ClickEvent.clicked_at.desc())
-        .all()
     )
+
+    # Apply date range filter
+    if start_date:
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        query = query.filter(models.ClickEvent.clicked_at >= start_date)
+    if end_date:
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+        query = query.filter(models.ClickEvent.clicked_at <= end_date)
+
+    clicks = query.order_by(models.ClickEvent.clicked_at.desc()).all()
 
     recent_clicks = clicks[:50]
 
@@ -117,7 +174,7 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
         "expires_at": url.expires_at,
         "max_clicks": url.max_clicks,
         "tag": url.tag,
-        "total_clicks": url.click_count,
+        "total_clicks": len(clicks),  # Filtered count
         "clicks_by_date": clicks_by_date,
         "browser_stats": browser_stats,
         "os_stats": os_stats,
@@ -125,11 +182,77 @@ def get_url_stats(db: Session, short_code: str) -> dict | None:
     }
 
 
-def get_recent_urls(db: Session, limit: int = 20) -> list[models.URL]:
-    """Get the most recently created URLs."""
-    return (
-        db.query(models.URL).order_by(models.URL.created_at.desc()).limit(limit).all()
+def export_stats_csv(
+    db: Session,
+    short_code: str,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> str | None:
+    """Export click events as a CSV string."""
+    url = get_url_by_code(db, short_code)
+    if not url:
+        return None
+
+    query = (
+        db.query(models.ClickEvent)
+        .filter(models.ClickEvent.url_id == url.id)
     )
+
+    if start_date:
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        query = query.filter(models.ClickEvent.clicked_at >= start_date)
+    if end_date:
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+        query = query.filter(models.ClickEvent.clicked_at <= end_date)
+
+    clicks = query.order_by(models.ClickEvent.clicked_at.desc()).all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["clicked_at", "referrer", "browser", "os", "ip_address"])
+
+    for click in clicks:
+        browser = "Unknown"
+        os_name = "Unknown"
+        if click.user_agent:
+            ua = parse(click.user_agent)
+            browser = ua.browser.family
+            os_name = ua.os.family
+
+        writer.writerow([
+            click.clicked_at.isoformat() if click.clicked_at else "",
+            click.referrer or "Direct",
+            browser,
+            os_name,
+            click.ip_address or "",
+        ])
+
+    return buf.getvalue()
+
+
+def get_recent_urls(
+    db: Session,
+    limit: int = 20,
+    search: str | None = None,
+    tag: str | None = None,
+) -> list[models.URL]:
+    """Get the most recently created URLs, optionally filtered by search term or tag."""
+    query = db.query(models.URL)
+
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            models.URL.original_url.ilike(search_pattern)
+            | models.URL.short_code.ilike(search_pattern)
+            | models.URL.custom_alias.ilike(search_pattern)
+        )
+
+    if tag:
+        query = query.filter(models.URL.tag == tag)
+
+    return query.order_by(models.URL.created_at.desc()).limit(limit).all()
 
 
 def is_url_expired(url: models.URL) -> bool:
