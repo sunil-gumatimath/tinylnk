@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { ArrowDownRight, Link2, ShieldCheck, Sparkles, TimerReset, Zap } from 'lucide-react';
 import type { ShortenedURL } from '../types';
 
@@ -6,6 +7,24 @@ interface HeroProps {
   onPrimaryAction: () => void;
 }
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 30 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.12, duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+  }),
+};
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.92 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { delay: 0.3, duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
 export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
   const totalClicks = recentLinks.reduce((sum, link) => sum + link.click_count, 0);
   const managedLinks = recentLinks.filter((link) => link.tag || link.expires_at || link.max_clicks).length;
@@ -13,17 +32,43 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
   return (
     <section className="hero-section">
       <div className="hero-copy">
-        <div className="hero-eyebrow">
+        <motion.div
+          className="hero-eyebrow"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={0}
+        >
           <Sparkles size={16} />
           Short links with built-in controls
-        </div>
+        </motion.div>
 
-        <h1>Shorten Links. Track Clicks. Own Your Brand.</h1>
-        <p className="hero-lede">
+        <motion.h1
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={1}
+        >
+          Shorten Links. Track Clicks. Own Your Brand.
+        </motion.h1>
+
+        <motion.p
+          className="hero-lede"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={2}
+        >
           Transform long, clunky URLs into branded short links. Gain actionable insights with real-time analytics, custom aliases, and advanced access controls.
-        </p>
+        </motion.p>
 
-        <div className="hero-actions">
+        <motion.div
+          className="hero-actions"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={3}
+        >
           <button type="button" className="primary-cta" onClick={onPrimaryAction}>
             Start shortening
             <ArrowDownRight size={18} />
@@ -32,9 +77,15 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
             <ShieldCheck size={16} />
             Self-hosted, privacy-friendly, analytics included
           </div>
-        </div>
+        </motion.div>
 
-        <div className="hero-metrics">
+        <motion.div
+          className="hero-metrics"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={4}
+        >
           <div className="metric-card">
             <span className="metric-value">{recentLinks.length}</span>
             <span className="metric-label">Active Links</span>
@@ -47,10 +98,15 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
             <span className="metric-value">{managedLinks}</span>
             <span className="metric-label">Managed links</span>
           </div>
-        </div>
+        </motion.div>
       </div>
 
-      <div className="hero-showcase panel-surface">
+      <motion.div
+        className="hero-showcase panel-surface"
+        variants={scaleIn}
+        initial="hidden"
+        animate="visible"
+      >
         <div className="showcase-topline">Workspace preview</div>
         <div className="showcase-frame">
           <div className="showcase-window">
@@ -102,17 +158,7 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     </section>
   );
 }
-
-// TODO: Add ARIA labels for accessibility
-
-// TODO: Add entrance animations for hero section
-
-// TODO: Add keyboard navigation support
-
-// TODO: Add entrance animations with Framer Motion
-
-// TODO: Add ARIA labels for screen reader accessibility
