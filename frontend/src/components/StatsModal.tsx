@@ -1,8 +1,12 @@
-import { Modal } from 'antd';
-import { BarChart2, Calendar, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
+import { useState } from 'react';
+import { Button, DatePicker, Modal } from 'antd';
+import { BarChart2, Calendar, Download, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { chartColors } from '../theme';
 import type { UrlStats } from '../types';
+import type { Dayjs } from 'dayjs';
+
+const { RangePicker } = DatePicker;
 
 interface StatsModalProps {
   open: boolean;
@@ -10,9 +14,49 @@ interface StatsModalProps {
   currentShortUrl: string;
   stats: UrlStats | null;
   onClose: () => void;
+  onDateRangeChange?: (startDate: string | null, endDate: string | null) => void;
+  adminKey: string | null;
 }
 
-export function StatsModal({ open, loading, currentShortUrl, stats, onClose }: StatsModalProps) {
+export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange, adminKey }: StatsModalProps) {
+  const [exporting, setExporting] = useState(false);
+
+  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
+    if (!onDateRangeChange) return;
+    if (!dates || !dates[0] || !dates[1]) {
+      onDateRangeChange(null, null);
+      return;
+    }
+    onDateRangeChange(
+      dates[0].startOf('day').toISOString(),
+      dates[1].endOf('day').toISOString(),
+    );
+  };
+
+  const handleExport = async () => {
+    if (!stats || !adminKey) return;
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/stats/${stats.short_code}/export`, {
+        headers: { 'X-Admin-Key': adminKey },
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tinylnk_${stats.short_code}_analytics.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      console.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -56,6 +100,21 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose }: S
                 <span>Created on</span>
               </div>
             </div>
+          </section>
+
+          <section className="stats-toolbar">
+            <RangePicker
+              onChange={handleDateChange}
+              style={{ borderRadius: 14 }}
+              placeholder={['Start date', 'End date']}
+            />
+            <Button
+              icon={<Download size={16} />}
+              onClick={handleExport}
+              loading={exporting}
+            >
+              Export CSV
+            </Button>
           </section>
 
           {stats.clicks_by_date?.length ? (
@@ -161,15 +220,3 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose }: S
     </Modal>
   );
 }
-
-// TODO: Add pagination for large datasets
-
-// TODO: Add CSV export for analytics data
-
-// TODO: Add debounced search input
-
-// TODO: Add CSV export for analytics data
-
-// TODO: Add date range picker for filtered analytics
-
-// TODO: Add debounced search input for click events
