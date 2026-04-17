@@ -13,6 +13,15 @@ class URLCreate(BaseModel):
     tag: Optional[str] = None
 
 
+class URLUpdate(BaseModel):
+    """Schema for updating an existing short URL."""
+    original_url: Optional[str] = None
+    custom_alias: Optional[str] = None
+    tag: Optional[str] = None
+    expires_in_hours: Optional[int] = None  # Resets expiry from now
+    max_clicks: Optional[int] = None
+
+
 class URLResponse(BaseModel):
     """Schema for returning a shortened URL."""
     id: int
@@ -57,9 +66,3 @@ class URLStats(BaseModel):
     browser_stats: list[StatsItem] = Field(default_factory=list)
     os_stats: list[StatsItem] = Field(default_factory=list)
     recent_clicks: list[ClickEventResponse] = Field(default_factory=list)
-
-# TODO: Add custom URL validation rules
-
-# TODO: Add custom URL format validation with regex
-
-# TODO: Add pagination schema for list endpoints
