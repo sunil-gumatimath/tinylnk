@@ -32,15 +32,3 @@ class ClickEvent(Base):
     ip_address = Column(String(45), nullable=True)
 
     url = relationship("URL", back_populates="clicks")
-
-# TODO: Add click analytics tracking model
-
-# TODO: Add URL expiration date field
-
-# TODO: Add password protection for private links
-
-# TODO: Add link categories and tags
-
-# TODO: Add password protection field for private links
-
-# TODO: Add user_id foreign key for multi-user support
