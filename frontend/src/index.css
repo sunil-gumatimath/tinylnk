@@ -872,18 +872,108 @@ a {
   }
 }
 
-/* TODO: Add responsive breakpoints for mobile */
+/* ─── Search Toolbar ─────────────────────────────── */
 
-/* TODO: Run accessibility audit and fix contrast issues */
+.search-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
 
-/* TODO: Add print stylesheet */
+.search-input {
+  flex: 1;
+}
 
-/* TODO: Add prefers-reduced-motion support */
+.search-toolbar .ant-select-selector {
+  border-radius: 14px !important;
+  height: 48px !important;
+  align-items: center;
+}
 
-/* TODO: Optimize font loading with font-display: swap */
+/* ─── QR Customizer ──────────────────────────────── */
 
-/* TODO: Add prefers-reduced-motion media query support */
+.qr-customizer {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
 
-/* TODO: Add print stylesheet for link cards */
+.qr-color-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
-/* TODO: Add font optimization with font-display: swap */
+.qr-color-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.qr-color-swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.qr-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  padding: 0;
+}
+
+.qr-swatch:hover {
+  transform: scale(1.12);
+}
+
+.qr-swatch.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.25);
+  transform: scale(1.12);
+}
+
+/* ─── Stats Toolbar ──────────────────────────────── */
+
+.stats-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.stats-toolbar .ant-picker {
+  border-radius: 14px;
+}
+
+/* ─── Edit Form ──────────────────────────────────── */
+
+.edit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0 16px;
+}
+
+.edit-form-grid .ant-form-item:last-child {
+  grid-column: 1 / -1;
+}
+
+/* ─── Reduced Motion ─────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
