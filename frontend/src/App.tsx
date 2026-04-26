@@ -21,7 +21,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] },
+    transition: { delay: i * 0.05, duration: 0.4 },
   }),
   exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } },
 };
@@ -49,7 +49,6 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [statsDateRange, setStatsDateRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
 
   const currentHost = window.location.origin;
 
@@ -226,7 +225,6 @@ function App() {
     setStatsModalVisible(true);
     setStatsLoading(true);
     setCurrentStats(null);
-    setStatsDateRange({ start: null, end: null });
 
     try {
       const response = await fetch(`/api/stats/${shortCode}`, { headers: authHeaders(key) });
@@ -257,7 +255,6 @@ function App() {
   const handleStatsDateChange = async (startDate: string | null, endDate: string | null) => {
     if (!currentStats || !adminKey) return;
 
-    setStatsDateRange({ start: startDate, end: endDate });
     setStatsLoading(true);
 
     try {

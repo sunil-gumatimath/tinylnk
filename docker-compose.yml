@@ -12,16 +12,9 @@ services:
       - TINYLNK_ADMIN_KEY=${TINYLNK_ADMIN_KEY:-}
       - TINYLNK_CORS_ORIGINS=${TINYLNK_CORS_ORIGINS:-http://localhost:8000}
       - TINYLNK_REDIRECT_WARNING=${TINYLNK_REDIRECT_WARNING:-false}
+    networks:
+      - tinylnk-network
 
-
-# TODO: Add custom network configuration
-
-# TODO: Add env_file for environment variables
-
-# TODO: Add restart policy for production
-
-# TODO: Add custom bridge network configuration
-
-# TODO: Add environment file for configuration
-
-# TODO: Add restart policy for production reliability
+networks:
+  tinylnk-network:
+    driver: bridge
