@@ -58,12 +58,3 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
   },
 });
 
-// TODO: Add dark mode theme variant
-
-// TODO: Verify WCAG AA color contrast compliance
-
-// TODO: Add high contrast mode for accessibility
-
-// TODO: Add high contrast mode for accessibility
-
-// TODO: Add WCAG AA color contrast verification

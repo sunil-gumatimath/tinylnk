@@ -43,6 +43,3 @@ export interface ShortenFormValues {
   tag?: string;
 }
 
-// TODO: Add Zustand or Redux for global state
-
-// TODO: Add Zustand store types for global state

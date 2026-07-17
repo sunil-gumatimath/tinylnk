@@ -12,10 +12,3 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-// TODO: Add Google Analytics integration
-
-// TODO: Add Axios API client with interceptors
-
-// TODO: Add Google Analytics integration
-
-// TODO: Add Axios client with request/response interceptors

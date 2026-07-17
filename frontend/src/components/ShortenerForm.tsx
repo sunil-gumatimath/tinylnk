@@ -67,7 +67,7 @@ export function ShortenerForm({
               <Input
                 size="large"
                 placeholder="https://example.com/launch/landing-page"
-                prefix={<LinkIcon className="w-5 h-5 text-gray-500" style={{ marginRight: '8px' }} />}
+                prefix={<LinkIcon size={20} style={{ marginRight: '8px' }} />}
               />
             </Form.Item>
 
@@ -131,16 +131,3 @@ export function ShortenerForm({
   );
 }
 
-// TODO: Add loading spinner during API calls
-
-// TODO: Add client-side URL validation
-
-// TODO: Add React Hook Form for form state
-
-// TODO: Add live region for screen readers
-
-// TODO: Add React Hook Form for better form state management
-
-// TODO: Add client-side URL validation before submission
-
-// TODO: Add loading skeleton during API response
