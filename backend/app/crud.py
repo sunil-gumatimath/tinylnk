@@ -3,6 +3,7 @@
 import csv
 import io
 import secrets
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,37 @@ from sqlalchemy.orm import Session
 from user_agents import parse
 
 from . import models, schemas
+
+
+# Bounded, TTL-based cache for hot links so high-traffic redirects don't hit
+# SQLite on every request. Entries expire after _URL_CACHE_TTL seconds.
+_url_cache: dict[str, tuple[float, models.URL]] = {}
+_URL_CACHE_TTL = 60  # seconds
+_URL_CACHE_MAX = 1000
+
+
+def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
+    """Look up a URL by its short code or custom alias (with caching)."""
+    now = time.monotonic()
+    cached = _url_cache.get(short_code)
+    if cached is not None:
+        ts, url = cached
+        if now - ts < _URL_CACHE_TTL:
+            return url
+        del _url_cache[short_code]
+
+    url = db.query(models.URL).filter(models.URL.short_code == short_code).first()
+    if not url:
+        url = db.query(models.URL).filter(models.URL.custom_alias == short_code).first()
+        if not url:
+            return None
+
+    if len(_url_cache) >= _URL_CACHE_MAX:
+        # Evict the oldest entry.
+        oldest_key = min(_url_cache, key=lambda k: _url_cache[k][0])
+        del _url_cache[oldest_key]
+    _url_cache[short_code] = (now, url)
+    return url
 
 
 def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
@@ -44,14 +76,6 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     db.commit()
     db.refresh(db_url)
     return db_url
-
-
-def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
-    """Look up a URL by its short code or custom alias."""
-    url = db.query(models.URL).filter(models.URL.short_code == short_code).first()
-    if not url:
-        url = db.query(models.URL).filter(models.URL.custom_alias == short_code).first()
-    return url
 
 
 def update_url(
@@ -91,6 +115,10 @@ def update_url(
 
     db.commit()
     db.refresh(url)
+    # Invalidate any cached copies (keyed by both short code and alias).
+    _url_cache.pop(url.short_code, None)
+    if url.custom_alias:
+        _url_cache.pop(url.custom_alias, None)
     return url
 
 
@@ -280,4 +308,8 @@ def delete_url(db: Session, short_code: str) -> bool:
 
     db.delete(url)
     db.commit()
+    # Remove any cached copies so subsequent lookups don't return a ghost.
+    _url_cache.pop(url.short_code, None)
+    if url.custom_alias:
+        _url_cache.pop(url.custom_alias, None)
     return True
