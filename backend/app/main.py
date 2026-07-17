@@ -44,10 +44,17 @@ ALLOWED_ORIGINS = os.getenv(
 # Optional: show a warning page before redirecting (default: disabled)
 REDIRECT_WARNING = os.getenv("TINYLNK_REDIRECT_WARNING", "false").lower() == "true"
 
+# Docs are disabled by default in production (the OpenAPI schema leaks every
+# endpoint). Set TINYLNK_ENABLE_DOCS=true to expose /docs and /openapi.json.
+ENABLE_DOCS = os.getenv("TINYLNK_ENABLE_DOCS", "false").lower() == "true"
+
 app = FastAPI(
     title="tinylnk",
     description="A fast and modern URL shortener API",
     version="1.0.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
 
 app.add_middleware(
@@ -507,6 +514,11 @@ async def redirect_to_url(
     url = crud.get_url_by_code(db, short_code)
     if not url:
         raise HTTPException(status_code=404, detail="Short URL not found.")
+
+    # Enforce the click limit BEFORE recording — never count a click that pushes
+    # a link past its cap, and never redirect a link that's already at/over it.
+    if url.max_clicks is not None and url.click_count >= url.max_clicks:
+        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
 
     # Check expiration
     if crud.is_url_expired(url):
