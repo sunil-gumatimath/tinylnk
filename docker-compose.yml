@@ -12,6 +12,7 @@ services:
       - TINYLNK_ADMIN_KEY=${TINYLNK_ADMIN_KEY:-}
       - TINYLNK_CORS_ORIGINS=${TINYLNK_CORS_ORIGINS:-http://localhost:8000}
       - TINYLNK_REDIRECT_WARNING=${TINYLNK_REDIRECT_WARNING:-false}
+      - TINYLNK_ENABLE_DOCS=${TINYLNK_ENABLE_DOCS:-false}
     networks:
       - tinylnk-network
 
