@@ -29,7 +29,12 @@ const cardVariants = {
 
 function App() {
   const [form] = Form.useForm<ShortenFormValues>();
-  const [adminKey, setAdminKey] = useState<string | null>(null);
+  const [adminKey, setAdminKeyState] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('tinylnk-admin-key') || null;
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -52,6 +57,16 @@ function App() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   const currentHost = window.location.origin;
+
+  /** Persist admin key to localStorage and state. */
+  const setAdminKey = (key: string | null) => {
+    if (key) {
+      localStorage.setItem('tinylnk-admin-key', key);
+    } else {
+      localStorage.removeItem('tinylnk-admin-key');
+    }
+    setAdminKeyState(key);
+  };
 
   /** Build headers object for admin-protected requests. */
   const authHeaders = (key: string | null = adminKey): Record<string, string> => {
