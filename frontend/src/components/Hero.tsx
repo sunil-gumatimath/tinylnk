@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowDownRight, Link2, ShieldCheck, Sparkles, TimerReset, Zap } from 'lucide-react';
+import { ArrowDownRight, ShieldCheck, Sparkles } from 'lucide-react';
 import type { ShortenedURL } from '../types';
 
 interface HeroProps {
@@ -14,15 +14,6 @@ const fadeUp = {
     y: 0,
     transition: { delay: i * 0.12, duration: 0.6 },
   }),
-};
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.92 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { delay: 0.3, duration: 0.7 },
-  },
 };
 
 export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
@@ -100,65 +91,6 @@ export function Hero({ recentLinks, onPrimaryAction }: HeroProps) {
           </div>
         </motion.div>
       </div>
-
-      <motion.div
-        className="hero-showcase panel-surface"
-        variants={scaleIn}
-        initial="hidden"
-        animate="visible"
-      >
-        <div className="showcase-topline">Workspace preview</div>
-        <div className="showcase-frame">
-          <div className="showcase-window">
-            <div className="showcase-dots">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="showcase-body">
-              <div className="mini-shortener">
-                <div className="mini-title">
-                  <Link2 size={16} />
-                  Quick shorten
-                </div>
-                <div className="mini-input-row">
-                  <div className="mini-input truncate-text">example.com/campaign/spring-launch</div>
-                  <div className="mini-button">Shorten</div>
-                </div>
-              </div>
-
-              <div className="showcase-grid">
-                <div className="mini-analytics-card">
-                  <div className="mini-label">
-                    <Zap size={15} />
-                    Click activity
-                  </div>
-                  <div className="mini-number">{totalClicks || 128}</div>
-                  <div className="mini-bars">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </div>
-
-                <div className="mini-analytics-card warm">
-                  <div className="mini-label">
-                    <TimerReset size={15} />
-                    Link controls
-                  </div>
-                  <ul className="mini-list">
-                    <li>Custom aliases</li>
-                    <li>Expiry windows</li>
-                    <li>QR downloads</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
     </section>
   );
 }

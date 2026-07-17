@@ -1,17 +1,22 @@
 import React from 'react';
 
-export const LinkIcon = ({ className = "w-6 h-6", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    width="24" 
-    height="24" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
+interface LinkIconProps extends React.SVGProps<SVGSVGElement> {
+  size?: number;
+}
+
+export const LinkIcon = ({ size = 20, className, style, ...props }: LinkIconProps) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
+    style={{ color: 'var(--text-muted)', ...style }}
     {...props}
   >
     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
