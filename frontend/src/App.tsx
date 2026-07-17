@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { LazyMotion, domAnimation, MotionConfig } from 'framer-motion';
 import { Button, Form, Input, Layout, Select, Spin, Typography, message } from 'antd';
 import { FolderOpen, RefreshCw, Search, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -83,9 +84,9 @@ function App() {
     setAvailableTags([]);
   };
 
-  const fetchTags = async (key: string) => {
+  const fetchTags = async (key: string, signal?: AbortSignal) => {
     try {
-      const response = await fetch('/api/tags', { headers: authHeaders(key) });
+      const response = await fetch('/api/tags', { headers: authHeaders(key), signal });
       if (response.ok) {
         const data = await response.json();
         setAvailableTags(data);
@@ -95,7 +96,7 @@ function App() {
     }
   };
 
-  const fetchRecentLinks = async (providedKey?: string, search?: string, tag?: string | null) => {
+  const fetchRecentLinks = async (providedKey?: string, search?: string, tag?: string | null, signal?: AbortSignal) => {
     const key = providedKey ?? adminKey;
     if (!key) {
       return;
@@ -110,7 +111,7 @@ function App() {
       if (tagFilter) params.set('tag', tagFilter);
 
       const url = `/api/recent${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await fetch(url, { headers: authHeaders(key) });
+      const response = await fetch(url, { headers: authHeaders(key), signal });
       if (response.status === 403) {
         clearAdminSession();
         message.error('Invalid admin key. Please try again.');
@@ -129,6 +130,7 @@ function App() {
       // Also fetch tags
       await fetchTags(key);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Failed to fetch recent links', error);
       message.error('Could not load recent links.');
     } finally {
@@ -398,14 +400,20 @@ function App() {
   // Debounced search
   useEffect(() => {
     if (!adminKey) return;
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchRecentLinks(adminKey, searchQuery, filterTag);
+      fetchRecentLinks(adminKey, searchQuery, filterTag, controller.signal);
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, filterTag]);
 
   return (
+    <LazyMotion features={domAnimation}>
+    <MotionConfig reducedMotion="user">
     <Layout className="app-shell">
       <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 100 }}>
         <Button 
@@ -552,6 +560,8 @@ function App() {
 
       <QrModal open={qrModalVisible} currentQrUrl={currentQrUrl} onClose={() => setQrModalVisible(false)} />
     </Layout>
+    </MotionConfig>
+    </LazyMotion>
   );
 }
 

@@ -109,7 +109,7 @@ def record_click(
         ip_address=ip_address,
     )
     db.add(click)
-    url.click_count = models.URL.click_count + 1
+    url.click_count += 1
     db.commit()
 
 
