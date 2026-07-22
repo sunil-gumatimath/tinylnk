@@ -1,4 +1,4 @@
-FROM python:3.10-slim AS builder
+FROM python:3.14-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -30,7 +30,7 @@ COPY backend/ backend/
 RUN cd frontend && bun run build
 
 # Start production image
-FROM python:3.10-slim
+FROM python:3.14-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 
