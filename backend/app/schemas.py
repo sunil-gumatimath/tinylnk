@@ -65,4 +65,5 @@ class URLStats(BaseModel):
     clicks_by_date: list[StatsItem] = Field(default_factory=list)
     browser_stats: list[StatsItem] = Field(default_factory=list)
     os_stats: list[StatsItem] = Field(default_factory=list)
+    referrer_stats: list[StatsItem] = Field(default_factory=list)
     recent_clicks: list[ClickEventResponse] = Field(default_factory=list)

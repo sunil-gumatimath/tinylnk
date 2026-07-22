@@ -32,6 +32,7 @@ export interface UrlStats {
   clicks_by_date: StatsItem[];
   browser_stats: StatsItem[];
   os_stats: StatsItem[];
+  referrer_stats: StatsItem[];
   recent_clicks: ClickEvent[];
 }
 

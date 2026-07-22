@@ -12,9 +12,9 @@ class URL(Base):
     original_url = Column(Text, nullable=False)
     short_code = Column(String(20), unique=True, index=True, nullable=False)
     custom_alias = Column(String(50), unique=True, index=True, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    expires_at = Column(DateTime, nullable=True)
-    max_clicks = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    max_clicks = Column(Integer, nullable=True, index=True)
     tag = Column(String(50), nullable=True, index=True)
     click_count = Column(Integer, default=0)
 
@@ -25,8 +25,8 @@ class ClickEvent(Base):
     __tablename__ = "click_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    url_id = Column(Integer, ForeignKey("urls.id"), nullable=False)
-    clicked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    url_id = Column(Integer, ForeignKey("urls.id"), nullable=False, index=True)
+    clicked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     referrer = Column(String(500), nullable=True)
     user_agent = Column(String(500), nullable=True)
     ip_address = Column(String(45), nullable=True)

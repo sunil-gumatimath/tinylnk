@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.10"
+  NODE_VERSION: "22"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Backend lint: Python + Ruff
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        run: |
+          pip install --no-cache-dir -r backend/requirements.txt
+
+      - name: Lint backend with Ruff
+        run: |
+          pip install ruff
+          ruff check backend/
+
+      # Frontend lint: Node + Bun + ESLint
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install --cwd frontend
+
+      - name: Lint frontend with ESLint
+        run: bun run --cwd frontend lint
+        continue-on-error: false
+
+      - name: Verify frontend build
+        run: bun run --cwd frontend build
+
+  test:
+    name: Test
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        run: |
+          pip install --no-cache-dir -r backend/requirements.txt
+
+      - name: Run tests with pytest
+        run: |
+          pip install pytest pytest-asyncio httpx
+          python -m pytest tests/ -v --tb=short
+        continue-on-error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            pytest*.xml
+            test-results/
+          if-no-files-found: ignore
+
+  build:
+    name: Build Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: tinylnk:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run container and health check
+        run: |
+          docker run -d \
+            --name tinylnk-test \
+            -p 8000:8000 \
+            -e TINYLNK_ENABLE_DOCS=true \
+            tinylnk:ci
+
+          # Wait for the container to start, then check health
+          echo "Waiting for container to be healthy..."
+          for i in $(seq 1 30); do
+            sleep 2
+            status=$(docker inspect --format='{{json .State.Health.Status}}' tinylnk-test 2>/dev/null || echo "null")
+            if [ "$status" = '"healthy"' ]; then
+              echo "Container is healthy!"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Timeout waiting for container to become healthy"
+              docker logs tinylnk-test
+              exit 1
+            fi
+          done
+
+          # Verify the health endpoint responds
+          curl -sf http://localhost:8000/api/health || {
+            echo "Health endpoint check failed"
+            docker logs tinylnk-test
+            exit 1
+          }
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop tinylnk-test 2>/dev/null || true
+          docker rm tinylnk-test 2>/dev/null || true

@@ -6,6 +6,9 @@ slowapi==0.1.9
 user-agents==2.2.0
 qrcode[pil]==7.4.2
 
+# Optional: error tracking (uncomment or add to requirements-prod.txt)
+sentry-sdk>=2.0,<3.0
+
 # Testing
 pytest
 pytest-asyncio

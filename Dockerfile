@@ -31,6 +31,8 @@ RUN cd frontend && bun run build
 
 # Start production image
 FROM python:3.10-slim
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

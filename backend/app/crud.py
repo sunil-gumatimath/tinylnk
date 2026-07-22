@@ -1,46 +1,23 @@
 """Database CRUD operations for the URL shortener."""
 
 import csv
-import io
+from io import StringIO
+from urllib.parse import urlparse
 import secrets
-import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import text as _sa_text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from user_agents import parse
-
 from . import models, schemas
 
-
-# Bounded, TTL-based cache for hot links so high-traffic redirects don't hit
-# SQLite on every request. Entries expire after _URL_CACHE_TTL seconds.
-_url_cache: dict[str, tuple[float, models.URL]] = {}
-_URL_CACHE_TTL = 60  # seconds
-_URL_CACHE_MAX = 1000
-
-
 def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
-    """Look up a URL by its short code or custom alias (with caching)."""
-    now = time.monotonic()
-    cached = _url_cache.get(short_code)
-    if cached is not None:
-        ts, url = cached
-        if now - ts < _URL_CACHE_TTL:
-            return url
-        del _url_cache[short_code]
-
+    """Look up a URL by its short code or custom alias (fresh from DB)."""
     url = db.query(models.URL).filter(models.URL.short_code == short_code).first()
     if not url:
         url = db.query(models.URL).filter(models.URL.custom_alias == short_code).first()
-        if not url:
-            return None
-
-    if len(_url_cache) >= _URL_CACHE_MAX:
-        # Evict the oldest entry.
-        oldest_key = min(_url_cache, key=lambda k: _url_cache[k][0])
-        del _url_cache[oldest_key]
-    _url_cache[short_code] = (now, url)
     return url
 
 
@@ -51,6 +28,16 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
         expires_at = datetime.now(timezone.utc) + timedelta(
             hours=url_data.expires_in_hours
         )
+
+    # Validate custom_alias uniqueness upfront
+    if url_data.custom_alias:
+        existing = (
+            db.query(models.URL)
+            .filter(models.URL.custom_alias == url_data.custom_alias)
+            .first()
+        )
+        if existing:
+            raise ValueError("This alias is already taken.")
 
     db_url = models.URL(
         original_url=str(url_data.url),
@@ -73,7 +60,11 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     else:
         raise RuntimeError("Failed to generate unique short code after 10 attempts")
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("A link with this alias already exists.")
     db.refresh(db_url)
     return db_url
 
@@ -115,10 +106,6 @@ def update_url(
 
     db.commit()
     db.refresh(url)
-    # Invalidate any cached copies (keyed by both short code and alias).
-    _url_cache.pop(url.short_code, None)
-    if url.custom_alias:
-        _url_cache.pop(url.custom_alias, None)
     return url
 
 
@@ -129,7 +116,14 @@ def record_click(
     user_agent: str | None = None,
     ip_address: str | None = None,
 ) -> None:
-    """Record a click event and increment the counter."""
+    """Record a click event and increment the counter atomically."""
+    # Atomic increment — avoids race conditions and works on any session state
+    db.execute(
+        _sa_text(
+            "UPDATE urls SET click_count = click_count + 1 WHERE id = :url_id"
+        ),
+        {"url_id": url.id},
+    )
     click = models.ClickEvent(
         url_id=url.id,
         referrer=referrer,
@@ -137,7 +131,6 @@ def record_click(
         ip_address=ip_address,
     )
     db.add(click)
-    url.click_count += 1
     db.commit()
 
 
@@ -174,11 +167,15 @@ def get_url_stats(
     clicks_by_date_dict = Counter()
     browser_dict = Counter()
     os_dict = Counter()
-
+    referrer_dict = Counter()
     for click in clicks:
-        # We need to make sure timezone matches, assuming UTC stored
         date_str = click.clicked_at.strftime("%Y-%m-%d")
         clicks_by_date_dict[date_str] += 1
+
+        if click.referrer:
+            parsed = urlparse(click.referrer)
+            domain = parsed.hostname or click.referrer
+            referrer_dict[domain] += 1
 
         if click.user_agent:
             ua = parse(click.user_agent)
@@ -188,12 +185,12 @@ def get_url_stats(
             browser_dict["Unknown"] += 1
             os_dict["Unknown"] += 1
 
-    # Format for charting
     clicks_by_date = [
         {"name": k, "value": v} for k, v in sorted(clicks_by_date_dict.items())
     ]
     browser_stats = [{"name": k, "value": v} for k, v in browser_dict.items()]
     os_stats = [{"name": k, "value": v} for k, v in os_dict.items()]
+    referrer_stats = [{"name": k, "value": v} for k, v in referrer_dict.most_common()]
 
     return {
         "original_url": url.original_url,
@@ -202,10 +199,11 @@ def get_url_stats(
         "expires_at": url.expires_at,
         "max_clicks": url.max_clicks,
         "tag": url.tag,
-        "total_clicks": len(clicks),  # Filtered count
+        "total_clicks": len(clicks),
         "clicks_by_date": clicks_by_date,
         "browser_stats": browser_stats,
         "os_stats": os_stats,
+        "referrer_stats": referrer_stats,
         "recent_clicks": recent_clicks,
     }
 
@@ -237,7 +235,7 @@ def export_stats_csv(
 
     clicks = query.order_by(models.ClickEvent.clicked_at.desc()).all()
 
-    buf = io.StringIO()
+    buf = StringIO()
     writer = csv.writer(buf)
     writer.writerow(["clicked_at", "referrer", "browser", "os", "ip_address"])
 
@@ -262,19 +260,19 @@ def export_stats_csv(
 
 def get_recent_urls(
     db: Session,
-    limit: int = 20,
     search: str | None = None,
     tag: str | None = None,
+    limit: int = 100,
 ) -> list[models.URL]:
     """Get the most recently created URLs, optionally filtered by search term or tag."""
     query = db.query(models.URL)
 
     if search:
-        search_pattern = f"%{search}%"
+        pattern = f"%{search}%"
         query = query.filter(
-            models.URL.original_url.ilike(search_pattern)
-            | models.URL.short_code.ilike(search_pattern)
-            | models.URL.custom_alias.ilike(search_pattern)
+            models.URL.original_url.ilike(pattern)
+            | models.URL.short_code.ilike(pattern)
+            | models.URL.custom_alias.ilike(pattern)
         )
 
     if tag:
@@ -285,22 +283,20 @@ def get_recent_urls(
 
 def is_url_expired(url: models.URL) -> bool:
     """Check if a URL has expired."""
-    if url.max_clicks is not None and url.click_count >= url.max_clicks:
-        return True
-
     if url.expires_at is None:
         return False
-
+    if url.max_clicks is not None and url.click_count >= url.max_clicks:
+        return True
     expires_at = url.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-
     return datetime.now(timezone.utc) > expires_at
 
 
 def delete_url(db: Session, short_code: str) -> bool:
     """Delete a URL by its short code or custom alias.
-    Because of cascade rules, this also deletes associated click events.
+
+    Returns True if the URL was found and deleted, False otherwise.
     """
     url = get_url_by_code(db, short_code)
     if not url:
@@ -308,8 +304,4 @@ def delete_url(db: Session, short_code: str) -> bool:
 
     db.delete(url)
     db.commit()
-    # Remove any cached copies so subsequent lookups don't return a ghost.
-    _url_cache.pop(url.short_code, None)
-    if url.custom_alias:
-        _url_cache.pop(url.custom_alias, None)
     return True

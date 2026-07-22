@@ -1,9 +1,11 @@
 """FastAPI URL Shortener — Main Application."""
 
 import html
+import logging
 import os
 import io
 import secrets
+from sqlalchemy import text
 
 from dotenv import load_dotenv
 load_dotenv()  # Load .env before any os.getenv() calls
@@ -22,7 +24,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
 from .database import Base, engine, get_db
+from .logging_config import setup_logging, RequestLogMiddleware
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
+
+# Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
+setup_logging()
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -34,7 +40,7 @@ limiter = Limiter(key_func=get_remote_address)
 ADMIN_API_KEY = os.getenv("TINYLNK_ADMIN_KEY", "")
 if not ADMIN_API_KEY:
     ADMIN_API_KEY = secrets.token_urlsafe(32)
-    print(f"\u26a0\ufe0f  No TINYLNK_ADMIN_KEY set. Generated ephemeral key: {ADMIN_API_KEY}")
+    logging.warning("No TINYLNK_ADMIN_KEY set. Generated ephemeral key: %s", ADMIN_API_KEY)
 
 # CORS origins (comma-separated env var, locked down by default)
 ALLOWED_ORIGINS = os.getenv(
@@ -99,6 +105,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(RequestLogMiddleware)
 
 app.state.limiter = limiter
 
@@ -305,7 +312,10 @@ async def shorten_url(
             detail="Cannot shorten URLs pointing to this domain.",
         )
 
-    db_url = crud.create_short_url(db, url_data)
+    try:
+        db_url = crud.create_short_url(db, url_data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     # Build the short URL
     base_url = str(request.base_url).rstrip("/")
@@ -499,8 +509,8 @@ async def delete_url_endpoint(
         raise HTTPException(status_code=404, detail="Short URL not found.")
     return None
 
-
 @app.get("/{short_code}")
+@limiter.limit("60/minute")
 async def redirect_to_url(
     short_code: str,
     request: Request,
@@ -524,14 +534,18 @@ async def redirect_to_url(
     if crud.is_url_expired(url):
         raise HTTPException(status_code=410, detail="This short URL has expired.")
 
-    # Record click (IP is anonymized before storage)
-    crud.record_click(
-        db,
-        url,
-        referrer=request.headers.get("referer"),
-        user_agent=request.headers.get("user-agent"),
-        ip_address=anonymize_ip(request.client.host if request.client else None),
-    )
+    try:
+        # Record click (IP is anonymized before storage)
+        crud.record_click(
+            db,
+            url,
+            referrer=request.headers.get("referer"),
+            user_agent=request.headers.get("user-agent"),
+            ip_address=anonymize_ip(request.client.host if request.client else None),
+        )
+    except Exception:
+        logging.exception("Failed to record click")
+        # Still redirect even if analytics recording fails
 
     # Optionally show an interstitial warning page before redirecting
     if REDIRECT_WARNING:
@@ -565,7 +579,13 @@ async def get_qr_code(
     return Response(content=_generate_qr(short_url, fg_color, bg_color), media_type="image/png")
 
 
+
 @app.get("/api/health")
-async def health_check():
-    """Health check endpoint for monitoring."""
-    return {"status": "ok"}
+async def health_check(db: Session = Depends(get_db)):
+    """Health check with DB connectivity verification."""
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {"status": "ok", "database": "connected" if db_ok else "disconnected"}

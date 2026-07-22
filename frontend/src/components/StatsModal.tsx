@@ -190,6 +190,27 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
             </section>
           ) : null}
 
+          {stats.referrer_stats?.length ? (
+            <section className="panel-surface chart-panel">
+              <div className="chart-heading">
+                <h4>Referrers</h4>
+                <span>Traffic sources</span>
+              </div>
+              <div className="chart-wrap compact">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={stats.referrer_stats} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76}>
+                      {stats.referrer_stats.map((_item, index) => (
+                        <Cell key={index} fill={chartColors[(index + 4) % chartColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          ) : null}
+
           <section className="panel-surface activity-panel">
             <div className="chart-heading">
               <h4>Recent activity</h4>

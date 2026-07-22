@@ -1,6 +1,6 @@
 # tinylnk
 
-> A self-hosted, full-stack URL shortener with built-in analytics, link management, and a premium dashboard.
+> A self-hosted, full-stack URL shortener with built-in analytics, link management, and a polished dashboard.
 
 ![Open Source](https://img.shields.io/badge/Open%20Source-Free%20to%20use-brightgreen.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
@@ -9,14 +9,14 @@
 
 ## Overview
 
-tinylnk converts long URLs into short, shareable links while providing detailed click analytics. Built with FastAPI and React, it runs as a single self-contained service with no external dependencies beyond SQLite.
+tinylnk converts long URLs into short, shareable links with detailed click analytics. Built with FastAPI and React, it runs as a single self-contained service and stores its data in SQLite; no external service is required.
 
 ## Features
 
 ### Core
 
 - **URL Shortening** — Generate short links from long URLs instantly
-- **Custom Aliases** — Define your own memorable short codes (e.g., `tinylnk/spring-launch`)
+- **Custom Aliases** — Define memorable short codes (for example, `https://your-domain/spring-launch`)
 - **Link Expiration** — Set time-based expiration so links auto-disable after a specified period
 - **Click Limits** — Cap the maximum number of clicks per link
 - **Tagging** — Organize links with custom tags for easy categorization
@@ -32,7 +32,7 @@ tinylnk converts long URLs into short, shareable links while providing detailed 
 
 - **Link Editing** — Update a link's destination URL, alias, tag, expiry, or click limit at any time
 - **Search & Filtering** — Search links by URL, alias, or short code; filter by tag
-- **Recent Links Dashboard** — View and manage all recently created links with real-time stats
+- **Recent Links Dashboard** — View and manage recently created links with click statistics
 
 ### QR Codes
 
@@ -49,7 +49,7 @@ tinylnk converts long URLs into short, shareable links while providing detailed 
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | **Backend** | FastAPI, SQLAlchemy, Uvicorn, SlowAPI |
 | **Database** | SQLite |
 | **Frontend** | React 19, TypeScript, Vite |
@@ -75,7 +75,7 @@ Visit `http://localhost:8000` in your browser.
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Frontend:**
@@ -91,7 +91,7 @@ The dev server proxies API requests to the backend automatically.
 ## API Reference
 
 | Method | Endpoint | Auth | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `POST` | `/api/shorten` | — | Create a shortened URL |
 | `PUT` | `/api/urls/{short_code}` | `X-Admin-Key` | Update a link's properties |
 | `DELETE` | `/api/urls/{short_code}` | `X-Admin-Key` | Delete a short URL and its analytics |
@@ -175,11 +175,15 @@ curl http://localhost:8000/api/qr/my-link?fg=7c3aed&bg=fffaf2 -o qr.png
 Copy `.env.example` to `.env` and customise:
 
 | Environment Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `SQLITE_DB_PATH` | `urlshortener.db` | Path to the SQLite database file |
 | `TINYLNK_ADMIN_KEY` | *(auto-generated)* | **Required for production.** Secret key for management operations. If unset, an ephemeral key is printed to stdout on startup — it will be lost on restart. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
+| `TINYLNK_ENABLE_DOCS` | `false` | Expose the OpenAPI schema and Swagger UI at `/openapi.json` and `/docs` |
+| `LOG_LEVEL` | `INFO` | Logging threshold: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
+| `LOG_FORMAT` | `text` | Set to `json` for structured logs |
+| `SENTRY_DSN` | *(empty)* | Optional Sentry error-tracking DSN |
 
 ## Project Structure
 
@@ -220,35 +224,45 @@ tinylnk/
 
 - **Short Code Generation** — Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
-- **Privacy-Friendly** — IP addresses are anonymized (last octet zeroed) before storage. All analytics are stored locally with no third-party tracking.
-- **Rate Limiting** — SlowAPI enforces per-endpoint rate limits (30/min shorten, 60/min stats/recent, 20/min delete).
+- **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics are stored locally; tinylnk does not include third-party tracking.
+- **Rate Limiting** — SlowAPI limits sensitive endpoints, including shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), deletion (20/min), and QR generation (30/min).
 
 ## Security
 
-- **Admin key authentication** on management endpoints (`PUT`, `DELETE`, `GET /api/recent`, `GET /api/stats`, `GET /api/tags`, `GET /api/stats/.../export`) via `X-Admin-Key` header
-- **CORS lockdown** — only configured origins can make cross-origin requests
-- **Path traversal protection** on static asset serving
-- **SSRF prevention** — blocks shortening of internal/private network URLs (`10.x`, `169.254.x`, `localhost`, etc.)
-- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, `Referrer-Policy`
+- **Admin key authentication** — management endpoints require the
+  `X-Admin-Key` header
+- **CORS lockdown** — only configured origins can make cross-origin
+  requests
+- **Path traversal protection** — static assets are served from an allowed
+  directory only
+- **SSRF prevention** — blocks shortening of internal and private-network
+  URLs, including `10.x`, `169.254.x`, and `localhost`
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`,
+  `Strict-Transport-Security`, and `Referrer-Policy`
 - **Request size limiting** — rejects payloads over 1 MB
-- **IP anonymization** — visitor IPs are truncated before database storage (GDPR-friendly)
-- **Rate limiting** on all API endpoints
-- **Reserved alias protection** — case-insensitive check prevents hijacking system routes
-- **Optional redirect interstitial** — warn users before navigating to external sites
-- **QR code caching** — bounded in-memory cache (500 entries) prevents CPU exhaustion from repeated generation
+- **IP anonymization** — visitor IPs are truncated before database storage
+- **Rate limiting** on sensitive API endpoints
+- **Reserved alias protection** — a case-insensitive check prevents system
+  route hijacking
+- **Optional redirect interstitial** — warn users before they navigate to an
+  external site
+- **QR code caching** — a bounded 500-entry in-memory cache reduces repeated
+  generation work
 - Runs as a non-root user in Docker
 
-> **⚠️ Important:** Always set `TINYLNK_ADMIN_KEY` in production. If unset, a random key is generated on each startup and printed to stdout — container restarts will invalidate it.
+> **Note:** HTTPS must be provided by a reverse proxy or hosting platform.
+> Security headers do not enable TLS on their own.
+>
+> **⚠️ Important:** Always set `TINYLNK_ADMIN_KEY` in production. Otherwise,
+> a random key is generated and logged on startup; it changes after a restart.
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
-|---|---|
+| --- | --- |
 | `Ctrl+K` / `⌘+K` | Focus the URL input and scroll to form |
 | `Escape` | Close any open modal |
 
-
-
 ## License
 
-This project is completely free to use. You can use it, change it, or do whatever you want with it!
+This project is released into the public domain under the [Unlicense](UNLICENSE).
