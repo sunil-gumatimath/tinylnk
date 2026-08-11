@@ -1,12 +1,5 @@
 import { motion } from "framer-motion";
 import { ArrowDownRight, ShieldCheck, Sparkles } from "lucide-react";
-import type { ShortenedURL } from "../types";
-
-interface HeroProps {
-	recentLinks: ShortenedURL[];
-	dashboardUnlocked: boolean;
-	onPrimaryAction: () => void;
-}
 
 const fadeUp = {
 	hidden: { opacity: 0, y: 30 },
@@ -17,101 +10,62 @@ const fadeUp = {
 	}),
 };
 
-export function Hero({
-	recentLinks,
-	dashboardUnlocked,
-	onPrimaryAction,
-}: HeroProps) {
-	const totalClicks = recentLinks.reduce(
-		(sum, link) => sum + link.click_count,
-		0,
-	);
-	const managedLinks = recentLinks.filter(
-		(link) => link.tag || link.expires_at || link.max_clicks,
-	).length;
-
+export function Hero() {
 	return (
 		<section className="hero-section">
 			<div className="hero-copy">
 				<motion.div
-					className="hero-eyebrow"
+					className="hero-badge"
+					custom={0}
 					variants={fadeUp}
 					initial="hidden"
 					animate="visible"
-					custom={0}
 				>
-					<Sparkles size={16} />
-					Short links with built-in controls
+					<Sparkles size={14} />
+					<span>Free & open-source URL shortener</span>
 				</motion.div>
 
 				<motion.h1
+					custom={1}
 					variants={fadeUp}
 					initial="hidden"
 					animate="visible"
-					custom={1}
 				>
-					Shorten links. Track clicks. Stay in control.
+					Shorten links.{" "}
+					<span className="text-gradient">Own your data.</span>
 				</motion.h1>
 
 				<motion.p
-					className="hero-lede"
+					className="hero-subtitle"
+					custom={2}
 					variants={fadeUp}
 					initial="hidden"
 					animate="visible"
-					custom={2}
 				>
-					Turn long URLs into memorable short links, then monitor clicks with
-					detailed analytics, custom aliases, and admin-protected link
-					management.
+					A privacy-focused URL shortener with real-time analytics, custom
+					aliases, and QR codes — all self-hosted.
 				</motion.p>
 
 				<motion.div
-					className="hero-actions"
+					className="hero-features"
+					custom={3}
 					variants={fadeUp}
 					initial="hidden"
 					animate="visible"
-					custom={3}
 				>
-					<button
-						type="button"
-						className="primary-cta"
-						onClick={onPrimaryAction}
-					>
-						Start shortening
-						<ArrowDownRight size={18} />
-					</button>
-					<div className="hero-supporting">
+					<div className="hero-feature">
 						<ShieldCheck size={16} />
-						Self-hosted with local analytics and IP anonymization
+						<span>Privacy-first analytics</span>
+					</div>
+					<div className="hero-feature">
+						<Sparkles size={16} />
+						<span>Custom aliases</span>
+					</div>
+					<div className="hero-feature">
+						<ArrowDownRight size={16} />
+						<span>QR code generation</span>
 					</div>
 				</motion.div>
-
-				{dashboardUnlocked ? (
-					<motion.div
-						className="hero-metrics"
-						variants={fadeUp}
-						initial="hidden"
-						animate="visible"
-						custom={4}
-					>
-						<div className="metric-card">
-							<span className="metric-value">{recentLinks.length}</span>
-							<span className="metric-label">Displayed links</span>
-						</div>
-						<div className="metric-card">
-							<span className="metric-value">
-								{totalClicks.toLocaleString()}
-							</span>
-							<span className="metric-label">
-								Clicks across displayed links
-							</span>
-						</div>
-						<div className="metric-card">
-							<span className="metric-value">{managedLinks}</span>
-							<span className="metric-label">Links with controls</span>
-						</div>
-					</motion.div>
-				) : null}
 			</div>
 		</section>
 	);

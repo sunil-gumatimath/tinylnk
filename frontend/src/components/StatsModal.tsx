@@ -1,3 +1,4 @@
+import { useAuth } from '@clerk/react';
 import { useState } from 'react';
 import { Button, DatePicker, Modal } from 'antd';
 import { BarChart2, Calendar, Download, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
@@ -15,11 +16,11 @@ interface StatsModalProps {
   stats: UrlStats | null;
   onClose: () => void;
   onDateRangeChange?: (startDate: string | null, endDate: string | null) => void;
-  adminKey: string | null;
 }
 
-export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange, adminKey }: StatsModalProps) {
+export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange }: StatsModalProps) {
   const [exporting, setExporting] = useState(false);
+  const { getToken } = useAuth();
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     if (!onDateRangeChange) return;
@@ -34,11 +35,12 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
   };
 
   const handleExport = async () => {
-    if (!stats || !adminKey) return;
+    if (!stats) return;
     setExporting(true);
     try {
+      const token = await getToken();
       const response = await fetch(`/api/stats/${stats.short_code}/export`, {
-        headers: { 'X-Admin-Key': adminKey },
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();

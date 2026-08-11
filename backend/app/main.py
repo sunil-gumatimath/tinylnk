@@ -25,6 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from . import crud, models, schemas
 from .database import Base, engine, get_db
 from .logging_config import setup_logging, RequestLogMiddleware
+from .auth import require_auth, AuthUser
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
 # Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
@@ -36,11 +37,7 @@ Base.metadata.create_all(bind=engine)
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Admin API key for protected endpoints (set TINYLNK_ADMIN_KEY env var)
-ADMIN_API_KEY = os.getenv("TINYLNK_ADMIN_KEY", "")
-if not ADMIN_API_KEY:
-    ADMIN_API_KEY = secrets.token_urlsafe(32)
-    logging.warning("No TINYLNK_ADMIN_KEY set. Generated ephemeral key: %s", ADMIN_API_KEY)
+
 
 # CORS origins (comma-separated env var, locked down by default)
 ALLOWED_ORIGINS = os.getenv(
@@ -68,9 +65,8 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Admin-Key"],
+    allow_headers=["Content-Type", "Authorization"],
 )
-
 
 # ─── Security Middlewares ─────────────────────────────────
 
@@ -170,10 +166,8 @@ a.b:hover{{background:#1d4ed8}}
 </div></body></html>"""
 
 
-def _require_admin_key(x_admin_key: str | None) -> None:
-    """Require a valid admin key for sensitive management endpoints."""
-    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
-        raise HTTPException(status_code=403, detail="Admin key required.")
+
+
 
 
 # Simple bounded cache for QR images (avoids repeated CPU-heavy generation)
@@ -340,12 +334,10 @@ async def update_url_endpoint(
     short_code: str,
     request: Request,
     update_data: schemas.URLUpdate,
-    x_admin_key: str = Header(..., description="Admin API key"),
+    _auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Update a shortened URL's properties (requires admin key)."""
-    if not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid admin key.")
+    """Update a shortened URL's properties (requires auth)."""
 
     url = crud.get_url_by_code(db, short_code)
     if not url:
@@ -401,13 +393,12 @@ async def update_url_endpoint(
 async def get_stats(
     short_code: str,
     request: Request,
-    x_admin_key: str | None = Header(None),
+    _auth: AuthUser,
     start_date: str | None = Query(None, description="ISO date string for range start"),
     end_date: str | None = Query(None, description="ISO date string for range end"),
     db: Session = Depends(get_db),
 ):
     """Get click analytics for a short URL, optionally filtered by date range."""
-    _require_admin_key(x_admin_key)
 
     parsed_start = _parse_date(start_date)
     parsed_end = _parse_date(end_date)
@@ -423,13 +414,12 @@ async def get_stats(
 async def export_stats(
     short_code: str,
     request: Request,
-    x_admin_key: str | None = Header(None),
+    _auth: AuthUser,
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Export click analytics as CSV (requires admin key)."""
-    _require_admin_key(x_admin_key)
+    """Export click analytics as CSV (requires auth)."""
 
     parsed_start = _parse_date(start_date)
     parsed_end = _parse_date(end_date)
@@ -451,13 +441,12 @@ async def export_stats(
 @limiter.limit("60/minute")
 async def get_recent(
     request: Request,
-    x_admin_key: str | None = Header(None),
+    _auth: AuthUser,
     search: str | None = Query(None, description="Search by URL, alias, or short code"),
     tag: str | None = Query(None, description="Filter by tag"),
     db: Session = Depends(get_db),
 ):
     """Get recently created URLs with optional search and tag filtering (admin only)."""
-    _require_admin_key(x_admin_key)
     urls = crud.get_recent_urls(db, search=search, tag=tag)
     base_url = str(request.base_url).rstrip("/")
     return [
@@ -480,11 +469,10 @@ async def get_recent(
 @limiter.limit("60/minute")
 async def get_tags(
     request: Request,
-    x_admin_key: str | None = Header(None),
+    _auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Get all unique tags (admin only)."""
-    _require_admin_key(x_admin_key)
+    """Get all unique tags (requires auth)."""
     rows = db.query(models.URL.tag).filter(models.URL.tag.isnot(None)).distinct().all()
     return [row[0] for row in rows if row[0]]
 
@@ -494,12 +482,10 @@ async def get_tags(
 async def delete_url_endpoint(
     short_code: str,
     request: Request,
-    x_admin_key: str = Header(..., description="Admin API key"),
+    _auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Delete a shortened URL and its analytics (requires admin key)."""
-    if not secrets.compare_digest(x_admin_key, ADMIN_API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid admin key.")
+    """Delete a shortened URL and its analytics (requires auth)."""
 
     if short_code.lower() in RESERVED_ALIASES:
         raise HTTPException(status_code=400, detail="Cannot delete reserved alias.")

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth, SignInButton, UserButton } from "@clerk/react";
 import { LazyMotion, domAnimation, MotionConfig } from "framer-motion";
 import {
 	Button,
@@ -38,12 +39,6 @@ const cardVariants = {
 
 function App() {
 	const [form] = Form.useForm<ShortenFormValues>();
-	const [adminKey, setAdminKeyState] = useState<string | null>(() => {
-		if (typeof window !== "undefined") {
-			return localStorage.getItem("tinylnk-admin-key") || null;
-		}
-		return null;
-	});
 	const [loading, setLoading] = useState(false);
 	const [tableLoading, setTableLoading] = useState(false);
 	const [statsLoading, setStatsLoading] = useState(false);
@@ -56,6 +51,7 @@ function App() {
 	const [qrModalVisible, setQrModalVisible] = useState(false);
 	const [currentQrUrl, setCurrentQrUrl] = useState<string | null>(null);
 	const { isDark, toggleTheme } = useTheme();
+	const { isSignedIn, getToken } = useAuth();
 
 	// New state for features
 	const [editModalVisible, setEditModalVisible] = useState(false);
@@ -66,57 +62,24 @@ function App() {
 	const [availableTags, setAvailableTags] = useState<string[]>([]);
 
 	const currentHost = window.location.origin;
-
-	/** Persist admin key to localStorage and state. */
-	const setAdminKey = (key: string | null) => {
-		if (key) {
-			localStorage.setItem("tinylnk-admin-key", key);
-		} else {
-			localStorage.removeItem("tinylnk-admin-key");
-		}
-		setAdminKeyState(key);
-	};
-
-	/** Build headers object for admin-protected requests. */
-	const authHeaders = (
-		key: string | null = adminKey,
-	): Record<string, string> => {
-		return key ? { "X-Admin-Key": key } : {};
-	};
-
 	const getShortUrl = (
 		record: Pick<ShortenedURL, "short_url" | "short_code">,
 	) => record.short_url || `${currentHost}/${record.short_code}`;
 
-	const promptForAdminKey = (
-		reason: "dashboard" | "stats" | "delete" | "edit",
-	): string | null => {
-		const promptMessage = {
-			dashboard: "Enter admin key to unlock link management:",
-			stats: "Enter admin key to view analytics:",
-			delete: "Enter admin key to delete links:",
-			edit: "Enter admin key to edit links:",
-		}[reason];
-
-		const key = window.prompt(promptMessage)?.trim() || "";
-		if (!key) {
-			return null;
+	/** Build Clerk-authenticated headers for admin-protected requests. */
+	const authHeaders = async (): Promise<Record<string, string>> => {
+		const headers: Record<string, string> = {};
+		if (isSignedIn) {
+			const token = await getToken();
+			if (token) headers["Authorization"] = `Bearer ${token}`;
 		}
-
-		setAdminKey(key);
-		return key;
+		return headers;
 	};
 
-	const clearAdminSession = () => {
-		setAdminKey(null);
-		setRecentLinks([]);
-		setAvailableTags([]);
-	};
-
-	const fetchTags = async (key: string, signal?: AbortSignal) => {
+	const fetchTags = async (signal?: AbortSignal) => {
 		try {
 			const response = await fetch("/api/tags", {
-				headers: authHeaders(key),
+				headers: await authHeaders(),
 				signal,
 			});
 			if (response.ok) {
@@ -129,15 +92,11 @@ function App() {
 	};
 
 	const fetchRecentLinks = async (
-		providedKey?: string,
 		search?: string,
 		tag?: string | null,
 		signal?: AbortSignal,
 	) => {
-		const key = providedKey ?? adminKey;
-		if (!key) {
-			return;
-		}
+		if (!isSignedIn) return;
 
 		setTableLoading(true);
 		try {
@@ -148,12 +107,7 @@ function App() {
 			if (tagFilter) params.set("tag", tagFilter);
 
 			const url = `/api/recent${params.toString() ? "?" + params.toString() : ""}`;
-			const response = await fetch(url, { headers: authHeaders(key), signal });
-			if (response.status === 403) {
-				clearAdminSession();
-				message.error("Invalid admin key. Please try again.");
-				return;
-			}
+			const response = await fetch(url, { headers: await authHeaders(), signal });
 
 			if (!response.ok) {
 				message.error("Could not load recent links.");
@@ -161,11 +115,10 @@ function App() {
 			}
 
 			const data = await response.json();
-			setAdminKey(key);
 			setRecentLinks(data);
 
 			// Also fetch tags
-			await fetchTags(key);
+			await fetchTags();
 		} catch (error) {
 			if (error instanceof DOMException && error.name === "AbortError") return;
 			console.error("Failed to fetch recent links", error);
@@ -194,11 +147,6 @@ function App() {
 		}
 	};
 
-	const scrollToShortenForm = () => {
-		document
-			.getElementById("shorten-form")
-			?.scrollIntoView({ behavior: "smooth", block: "start" });
-	};
 
 	const handleCopy = async (text: string) => {
 		try {
@@ -248,8 +196,8 @@ function App() {
 			setResult(data);
 			form.resetFields();
 			message.success("URL shortened successfully.");
-			if (adminKey) {
-				await fetchRecentLinks(adminKey);
+			if (isSignedIn) {
+				await fetchRecentLinks();
 			}
 		} catch (error: unknown) {
 			const errorMessage =
@@ -263,10 +211,7 @@ function App() {
 	};
 
 	const showStats = async (shortCode: string, shortUrl: string) => {
-		const key = adminKey ?? promptForAdminKey("stats");
-		if (!key) {
-			return;
-		}
+		if (!isSignedIn) return;
 
 		setCurrentShortUrl(shortUrl);
 		setStatsModalVisible(true);
@@ -275,14 +220,8 @@ function App() {
 
 		try {
 			const response = await fetch(`/api/stats/${shortCode}`, {
-				headers: authHeaders(key),
+				headers: await authHeaders(),
 			});
-			if (response.status === 403) {
-				clearAdminSession();
-				message.error("Invalid admin key. Please try again.");
-				setStatsModalVisible(false);
-				return;
-			}
 
 			if (!response.ok) {
 				message.error("Failed to fetch stats.");
@@ -305,7 +244,7 @@ function App() {
 		startDate: string | null,
 		endDate: string | null,
 	) => {
-		if (!currentStats || !adminKey) return;
+		if (!currentStats || !isSignedIn) return;
 
 		setStatsLoading(true);
 
@@ -315,7 +254,7 @@ function App() {
 			if (endDate) params.set("end_date", endDate);
 
 			const url = `/api/stats/${currentStats.short_code}${params.toString() ? "?" + params.toString() : ""}`;
-			const response = await fetch(url, { headers: authHeaders() });
+			const response = await fetch(url, { headers: await authHeaders() });
 			if (response.ok) {
 				const data = await response.json();
 				setCurrentStats(data);
@@ -328,20 +267,13 @@ function App() {
 	};
 
 	const handleDelete = async (shortCode: string) => {
-		try {
-			const key = adminKey ?? promptForAdminKey("delete");
-			if (!key) return;
+		if (!isSignedIn) return;
 
+		try {
 			const response = await fetch(`/api/urls/${shortCode}`, {
 				method: "DELETE",
-				headers: authHeaders(key),
+				headers: await authHeaders(),
 			});
-
-			if (response.status === 403) {
-				clearAdminSession();
-				message.error("Invalid admin key. Please try again.");
-				return;
-			}
 
 			if (!response.ok) {
 				const data = await response.json();
@@ -349,23 +281,22 @@ function App() {
 				return;
 			}
 
-			message.success("Link deleted successfully.");
-			await fetchRecentLinks(key);
+			message.success("Link deleted.");
+			setRecentLinks((prev) => prev.filter((l) => l.short_code !== shortCode));
 		} catch (error) {
-			console.error("Failed to delete link", error);
+			console.error("Failed to delete", error);
 			message.error("An error occurred while deleting.");
 		}
 	};
 
 	const handleEdit = (record: ShortenedURL) => {
-		const key = adminKey ?? promptForAdminKey("edit");
-		if (!key) return;
+		if (!isSignedIn) return;
 		setEditingRecord(record);
 		setEditModalVisible(true);
 	};
 
 	const handleEditSave = async (shortCode: string, data: EditFormValues) => {
-		if (!adminKey) return;
+		if (!isSignedIn) return;
 		setEditLoading(true);
 
 		try {
@@ -373,34 +304,26 @@ function App() {
 				method: "PUT",
 				headers: {
 					"Content-Type": "application/json",
-					...authHeaders(),
+					...await authHeaders(),
 				},
 				body: JSON.stringify({
 					original_url: data.original_url || null,
-					custom_alias: data.custom_alias || null,
-					tag: data.tag || null,
-					expires_in_hours: data.expires_in_hours,
-					max_clicks: data.max_clicks,
+					custom_alias: data.custom_alias?.trim() || null,
+					tag: data.tag?.trim() || null,
 				}),
 			});
 
-			if (response.status === 403) {
-				clearAdminSession();
-				message.error("Invalid admin key.");
+			if (!response.ok) {
+				const errorData = await response.json();
+				message.error(errorData.detail || "Failed to update.");
 				setEditModalVisible(false);
 				return;
 			}
 
-			const result = await response.json();
-			if (!response.ok) {
-				message.error(result.detail || "Failed to update link.");
-				return;
-			}
-
-			message.success("Link updated successfully.");
+			message.success("Link updated.");
 			setEditModalVisible(false);
 			setEditingRecord(null);
-			await fetchRecentLinks(adminKey);
+			await fetchRecentLinks();
 		} catch (error) {
 			console.error("Failed to update", error);
 			message.error("An error occurred while updating.");
@@ -409,60 +332,18 @@ function App() {
 		}
 	};
 
-	const unlockDashboard = async () => {
-		const key = promptForAdminKey("dashboard");
-		if (!key) {
-			return;
-		}
-
-		await fetchRecentLinks(key);
-	};
-
-	const showQrCode = (shortCode: string) => {
-		setCurrentQrUrl(`/api/qr/${shortCode}`);
-		setQrModalVisible(true);
-	};
-
-	// Keyboard shortcuts
-	const handleKeyDown = useCallback((e: KeyboardEvent) => {
-		// Ctrl/Cmd+K → focus URL input
-		if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-			e.preventDefault();
-			const urlInput = document.querySelector<HTMLInputElement>(
-				"#shorten-form input",
-			);
-			if (urlInput) {
-				urlInput.focus();
-				scrollToShortenForm();
-			}
-		}
-		// Escape → close modals
-		if (e.key === "Escape") {
-			setStatsModalVisible(false);
-			setQrModalVisible(false);
-			setEditModalVisible(false);
-		}
-	}, []);
-
 	useEffect(() => {
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [handleKeyDown]);
-
-	// Auto-fetch links when admin key is available (from localStorage on mount)
-	useEffect(() => {
-		if (adminKey) {
-			fetchRecentLinks(adminKey);
+		if (isSignedIn) {
+			fetchRecentLinks();
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Debounced search
 	useEffect(() => {
-		if (!adminKey) return;
+		if (!isSignedIn) return;
 		const controller = new AbortController();
 		const timer = setTimeout(() => {
-			fetchRecentLinks(adminKey, searchQuery, filterTag, controller.signal);
+			fetchRecentLinks(searchQuery, filterTag, controller.signal);
 		}, 300);
 		return () => {
 			clearTimeout(timer);
@@ -472,196 +353,182 @@ function App() {
 	}, [searchQuery, filterTag]);
 
 	return (
-		<LazyMotion features={domAnimation}>
-			<MotionConfig reducedMotion="user">
-				<Layout className="app-shell">
-					<div
-						style={{ position: "absolute", top: 24, right: 24, zIndex: 100 }}
-					>
-						<Button
-							type="text"
-							onClick={toggleTheme}
-							icon={
-								isDark ? (
-									<Sun size={20} color="var(--text)" />
+		<MotionConfig reducedMotion="user">
+			<LazyMotion features={domAnimation}>
+				<Layout className={`app-layout ${isDark ? "dark" : "light"}`}>
+					{/* ─── Header ─────────────────────────────────────────────── */}
+					<header className="app-header">
+						<div className="header-inner">
+							<a href="/" className="logo">
+								tinylnk
+							</a>
+							<nav className="header-nav">
+								<button
+									className="theme-toggle"
+									onClick={toggleTheme}
+									aria-label="Toggle theme"
+								>
+									{isDark ? <Sun size={18} /> : <Moon size={18} />}
+								</button>
+								{isSignedIn ? (
+									<UserButton />
 								) : (
-									<Moon size={20} color="var(--text)" />
-								)
-							}
-						/>
-					</div>
-					<div className="ambient-backdrop">
-						<div className="grid-overlay" />
-					</div>
+									<SignInButton mode="modal">
+										<Button type="primary" ghost>
+											Sign In
+										</Button>
+									</SignInButton>
+								)}
+							</nav>
+						</div>
+					</header>
 
-					<Content className="page-shell">
-						<Hero
-							recentLinks={recentLinks}
-							dashboardUnlocked={Boolean(adminKey)}
-							onPrimaryAction={scrollToShortenForm}
-						/>
+					<Content className="app-content">
+						<div className="content-wrapper">
+							{/* ─── Hero ──────────────────────────────────────────────── */}
+							<Hero />
 
-						<ShortenerForm
-							form={form}
-							loading={loading}
-							showAdvanced={showAdvanced}
-							result={result}
-							onSubmit={onFinish}
-							onToggleAdvanced={() => setShowAdvanced((value) => !value)}
-							onCopy={handleCopy}
-							onShowQr={showQrCode}
-							getShortUrl={getShortUrl}
-							validateUrlInput={validateUrlInput}
-						/>
+							<ShortenerForm
+								form={form}
+								loading={loading}
+								showAdvanced={showAdvanced}
+								onToggleAdvanced={() => setShowAdvanced((v) => !v)}
+								onSubmit={onFinish}
+								validateUrlInput={validateUrlInput}
+								result={result}
+								onCopy={handleCopy}
+								onShowQr={(shortCode) => {
+									setCurrentQrUrl(shortCode);
+									setQrModalVisible(true);
+								}}
+								getShortUrl={getShortUrl}
+							/>
 
-						<section className="links-section">
-							<div className="section-heading section-heading-row">
-								<div>
-									<span className="section-kicker">Manage links</span>
-									<Title level={2}>Link Activity Dashboard</Title>
-									<Paragraph>
-										Review click activity, copy short URLs for sharing, and
-										manage links and campaigns.
-									</Paragraph>
-								</div>
-								<Button
-									onClick={
-										adminKey ? () => fetchRecentLinks() : unlockDashboard
-									}
-									loading={tableLoading}
-									icon={<RefreshCw size={16} />}
+							{isSignedIn && (
+								<motion.section
+									className="dashboard-section"
+									initial={{ opacity: 0, y: 30 }}
+									animate={{ opacity: 1, y: 0 }}
+									transition={{ delay: 0.3, duration: 0.5 }}
 								>
-									{adminKey ? "Refresh" : "Unlock"}
-								</Button>
-							</div>
+									<div className="dashboard-header">
+										<div className="dashboard-header-info">
+											<Title level={2} className="dashboard-title">
+												Dashboard
+											</Title>
+											<Paragraph className="dashboard-subtitle">
+												Manage your shortened URLs
+											</Paragraph>
+										</div>
+										<Button
+											onClick={() => fetchRecentLinks()}
+											loading={tableLoading}
+											icon={<RefreshCw size={16} />}
+										>
+											Refresh
+										</Button>
+									</div>
 
-							{adminKey ? (
-								<motion.div
-									className="search-toolbar"
-									initial={{ opacity: 0, height: 0 }}
-									animate={{ opacity: 1, height: "auto" }}
-									transition={{ duration: 0.3 }}
-								>
-									<Input
-										prefix={<Search size={16} color="var(--text-muted)" />}
-										placeholder="Search by URL, alias, or short code..."
-										value={searchQuery}
-										onChange={(e) => setSearchQuery(e.target.value)}
-										allowClear
-										className="search-input"
-									/>
-									<Select
-										placeholder="All tags"
-										value={filterTag}
-										onChange={(val) => setFilterTag(val)}
-										allowClear
-										style={{ minWidth: 160 }}
-										options={availableTags.map((t) => ({ label: t, value: t }))}
-									/>
-								</motion.div>
-							) : null}
+									<motion.div className="search-toolbar" layout>
+										<Input
+											prefix={<Search size={16} />}
+											placeholder="Search URLs..."
+											value={searchQuery}
+											onChange={(e) => setSearchQuery(e.target.value)}
+											allowClear
+											className="search-input"
+										/>
+										{availableTags.length > 0 && (
+											<Select
+												placeholder="Filter by tag"
+												allowClear
+												className="tag-filter"
+												value={filterTag}
+												onChange={(value) => setFilterTag(value)}
+												options={availableTags.map((tag) => ({
+													value: tag,
+													label: tag,
+												}))}
+											/>
+										)}
+									</motion.div>
 
-							{tableLoading ? (
-								<div className="empty-state panel-surface">
-									<Spin />
-									<span>Loading active links...</span>
-								</div>
-							) : !adminKey ? (
-								<div className="empty-state panel-surface">
-									<FolderOpen
-										size={44}
-										strokeWidth={1}
-										color="var(--text-muted)"
-										style={{ marginBottom: "16px" }}
-									/>
-									<h3>Dashboard locked</h3>
-									<p>
-										Enter the admin key to view recent links, analytics, and
-										destructive actions for this tinylnk instance.
-									</p>
-									<Button type="primary" onClick={unlockDashboard}>
-										Unlock dashboard
-									</Button>
-								</div>
-							) : recentLinks.length === 0 ? (
-								<div className="empty-state panel-surface">
-									<FolderOpen
-										size={44}
-										strokeWidth={1}
-										color="var(--text-muted)"
-										style={{ marginBottom: "16px" }}
-									/>
-									<h3>
-										{searchQuery || filterTag
-											? "No matches found"
-											: "No links yet"}
-									</h3>
-									<p>
-										{searchQuery || filterTag
-											? "Try adjusting your search or clearing the tag filter."
-											: "Create your first short link above to start building a searchable, trackable link library."}
-									</p>
-								</div>
-							) : (
-								<div className="links-grid">
-									<AnimatePresence mode="popLayout">
-										{recentLinks.map((record, i) => (
-											<motion.div
-												key={record.id}
-												variants={cardVariants}
-												initial="hidden"
-												animate="visible"
-												exit="exit"
-												custom={i}
-												layout
-											>
-												<LinkCard
-													record={record}
-													getShortUrl={getShortUrl}
-													onCopy={handleCopy}
-													onShowQr={showQrCode}
-													onShowStats={showStats}
-													onDelete={handleDelete}
-													onEdit={handleEdit}
-													onShare={handleShare}
-												/>
-											</motion.div>
-										))}
-									</AnimatePresence>
-								</div>
+									{tableLoading ? (
+										<div className="table-loading">
+											<Spin size="large" />
+										</div>
+									) : recentLinks.length === 0 ? (
+										<div className="empty-state panel-surface">
+											<FolderOpen size={44} />
+											<Title level={4}>No links yet</Title>
+										</div>
+									) : (
+										<div className="links-grid">
+											<AnimatePresence mode="popLayout">
+												{recentLinks.map((link, index) => (
+													<motion.div
+														key={link.short_code}
+														custom={index}
+														variants={cardVariants}
+														initial="hidden"
+														animate="visible"
+														exit="exit"
+														layout
+													>
+														<LinkCard
+															record={link}
+															getShortUrl={getShortUrl}
+															onCopy={handleCopy}
+															onShare={handleShare}
+															onShowStats={showStats}
+															onDelete={handleDelete}
+															onEdit={handleEdit}
+															onShowQr={(shortCode) => {
+																setCurrentQrUrl(shortCode);
+																setQrModalVisible(true);
+															}}
+														/>
+													</motion.div>
+												))}
+											</AnimatePresence>
+										</div>
+									)}
+								</motion.section>
 							)}
-						</section>
+
+							{/* ─── Modals ─────────────────────────────────────────────── */}
+							<StatsModal
+								open={statsModalVisible}
+								currentShortUrl={currentShortUrl}
+								stats={currentStats}
+								loading={statsLoading}
+								onClose={() => setStatsModalVisible(false)}
+								onDateRangeChange={handleStatsDateChange}
+							/>
+							<EditModal
+								open={editModalVisible}
+								record={editingRecord}
+								loading={editLoading}
+								onClose={() => {
+									setEditModalVisible(false);
+									setEditingRecord(null);
+								}}
+								onSave={handleEditSave}
+							/>
+
+							<QrModal
+								open={qrModalVisible}
+								currentQrUrl={currentQrUrl}
+								onClose={() => {
+									setQrModalVisible(false);
+									setCurrentQrUrl(null);
+								}}
+							/>
+						</div>
 					</Content>
-
-					<StatsModal
-						open={statsModalVisible}
-						loading={statsLoading}
-						currentShortUrl={currentShortUrl}
-						stats={currentStats}
-						onClose={() => setStatsModalVisible(false)}
-						onDateRangeChange={handleStatsDateChange}
-						adminKey={adminKey}
-					/>
-
-					<EditModal
-						open={editModalVisible}
-						loading={editLoading}
-						record={editingRecord}
-						onSave={handleEditSave}
-						onClose={() => {
-							setEditModalVisible(false);
-							setEditingRecord(null);
-						}}
-					/>
-
-					<QrModal
-						open={qrModalVisible}
-						currentQrUrl={currentQrUrl}
-						onClose={() => setQrModalVisible(false)}
-					/>
 				</Layout>
-			</MotionConfig>
-		</LazyMotion>
+			</LazyMotion>
+		</MotionConfig>
 	);
 }
 

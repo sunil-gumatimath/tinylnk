@@ -13,3 +13,4 @@ sentry-sdk>=2.0,<3.0
 pytest
 pytest-asyncio
 httpx
+PyJWT>=2.8,<3

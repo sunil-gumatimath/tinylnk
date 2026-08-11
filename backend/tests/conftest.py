@@ -12,7 +12,7 @@ if _backend_dir not in sys.path:
 # Set test environment variables BEFORE importing the application.
 # ---------------------------------------------------------------------------
 os.environ["TINYLNK_ADMIN_KEY"] = "test-admin-key-12345"
-os.environ["TINYLNK_ENABLE_DOCS"] = "false"
+os.environ["TINYLNK_ENV"] = "test"
 # Write the real SQLite file to a temp location (the ``get_db`` override in
 # the ``client`` fixture ensures no test ever touches this file).
 os.environ["SQLITE_DB_PATH"] = os.path.abspath(
