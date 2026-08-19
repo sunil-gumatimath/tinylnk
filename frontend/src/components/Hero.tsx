@@ -22,7 +22,7 @@ export function Hero() {
 					animate="visible"
 				>
 					<Sparkles size={14} />
-					<span>Free & open-source URL shortener</span>
+					<span>Open-source · self-hosted</span>
 				</motion.div>
 
 				<motion.h1
@@ -32,7 +32,7 @@ export function Hero() {
 					animate="visible"
 				>
 					Shorten links.{" "}
-					<span className="text-gradient">Own your data.</span>
+					<span className="text-gradient">Keep the data.</span>
 				</motion.h1>
 
 				<motion.p
@@ -42,8 +42,8 @@ export function Hero() {
 					initial="hidden"
 					animate="visible"
 				>
-					A privacy-focused URL shortener with real-time analytics, custom
-					aliases, and QR codes — all self-hosted.
+					Paste a long URL, get a short one back — with click tracking,
+					custom aliases, and QR codes, all running on your own server.
 				</motion.p>
 
 				<motion.div
@@ -55,11 +55,11 @@ export function Hero() {
 				>
 					<div className="hero-feature">
 						<ShieldCheck size={16} />
-						<span>Privacy-first analytics</span>
+						<span>Click analytics</span>
 					</div>
 					<div className="hero-feature">
 						<Sparkles size={16} />
-						<span>Custom aliases</span>
+						<span>Custom short links</span>
 					</div>
 					<div className="hero-feature">
 						<ArrowDownRight size={16} />

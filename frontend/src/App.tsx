@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth, SignInButton, UserButton } from "@clerk/react";
 import { LazyMotion, domAnimation, MotionConfig } from "framer-motion";
 import {
@@ -62,9 +62,12 @@ function App() {
 	const [availableTags, setAvailableTags] = useState<string[]>([]);
 
 	const currentHost = window.location.origin;
-	const getShortUrl = (
-		record: Pick<ShortenedURL, "short_url" | "short_code">,
-	) => record.short_url || `${currentHost}/${record.short_code}`;
+	const getShortUrl = useMemo(
+		() =>
+			(record: Pick<ShortenedURL, "short_url" | "short_code">) =>
+				record.short_url || `${currentHost}/${record.short_code}`,
+		[currentHost],
+	);
 
 	/** Build Clerk-authenticated headers for admin-protected requests. */
 	const authHeaders = async (): Promise<Record<string, string>> => {

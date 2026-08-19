@@ -52,8 +52,8 @@ export function ShortenerForm({
 				<span className="section-kicker">Quick Create</span>
 				<h2>Enter your destination URL</h2>
 				<p>
-					Enter a long URL to create a short, trackable link. Add an alias,
-					expiry, click limit, or tag, then generate a QR code after creation.
+					Turn a long URL into a short, trackable link. Pick an alias,
+					set an expiry or click limit, tag it, then generate a QR code.
 				</p>
 			</div>
 
@@ -186,16 +186,7 @@ export function ShortenerForm({
 					style={{ display: "flex", flexDirection: "column" }}
 				>
 					{result ? (
-						<div
-							className="result-panel panel-surface"
-							style={{
-								flex: 1,
-								margin: 0,
-								display: "flex",
-								flexDirection: "column",
-								justifyContent: "center",
-							}}
-						>
+						<div className="result-panel panel-surface result-panel--flex">
 							<div className="result-header">
 								<span className="result-badge">Live result</span>
 								<span className="result-title">
@@ -222,26 +213,17 @@ export function ShortenerForm({
 							</div>
 						</div>
 					) : (
-						<div
-							className="empty-state panel-surface"
-							style={{
-								flex: 1,
-								display: "flex",
-								flexDirection: "column",
-								justifyContent: "center",
-								alignItems: "center",
-							}}
-						>
+						<div className="empty-state--centered panel-surface">
 							<Sparkles
 								size={40}
 								strokeWidth={1}
 								color="var(--text-muted)"
-								style={{ marginBottom: "16px" }}
+								className="empty-state__icon"
 							/>
-							<h3 style={{ margin: 0 }}>Instant Link Generation</h3>
-							<p style={{ margin: "8px 0 0 0" }}>
-								Your customized short link and downloadable QR code will appear
-								here the moment you hit create.
+							<h3>Your link shows up here</h3>
+							<p className="empty-state__hint">
+								Paste a URL above and hit create — your short link and a
+								QR code button appear right below.
 							</p>
 						</div>
 					)}
