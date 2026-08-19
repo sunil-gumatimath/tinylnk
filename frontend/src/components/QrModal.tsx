@@ -32,7 +32,7 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
 
   // Build URL with color params
   const qrSrc = currentQrUrl
-    ? `${currentQrUrl}?fg=${encodeURIComponent(fgColor)}&bg=${encodeURIComponent(bgColor)}`
+    ? `${currentQrUrl}?fg=${fgColor}&bg=${bgColor}`
     : null;
 
   const handleDownload = () => {
