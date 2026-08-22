@@ -8,7 +8,7 @@ qrcode[pil]==7.4.2
 PyJWT[crypto]>=2.8,<3  # runtime dep — Clerk JWT verification (RS256 needs cryptography)
 
 # Optional: error tracking (uncomment or add to requirements-prod.txt)
-sentry-sdk>=2.0,<3.0
+sentry-sdk>=2.68.0,<3.0
 
 # Testing
 pytest
