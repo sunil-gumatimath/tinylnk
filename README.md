@@ -93,15 +93,24 @@ The dev server proxies API requests to the backend automatically.
 | Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
 | `POST` | `/api/shorten` | — | Create a shortened URL |
-| `PUT` | `/api/urls/{short_code}` | `X-Admin-Key` | Update a link's properties |
-| `DELETE` | `/api/urls/{short_code}` | `X-Admin-Key` | Delete a short URL and its analytics |
-| `GET` | `/api/stats/{short_code}` | `X-Admin-Key` | Get analytics (supports `?start_date=` & `?end_date=`) |
-| `GET` | `/api/stats/{short_code}/export` | `X-Admin-Key` | Export analytics as CSV |
-| `GET` | `/api/recent` | `X-Admin-Key` | List recent links (supports `?search=` & `?tag=`) |
-| `GET` | `/api/tags` | `X-Admin-Key` | List all unique tags |
+| `PUT` | `/api/urls/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Update a link's properties |
+| `DELETE` | `/api/urls/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Delete a short URL and its analytics |
+| `GET` | `/api/stats/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Get analytics (supports `?start_date=` & `?end_date=`) |
+| `GET` | `/api/stats/{short_code}/export` | `Clerk JWT` or `X-Admin-Key` | Export analytics as CSV |
+| `GET` | `/api/recent` | `Clerk JWT` or `X-Admin-Key` | List recent links (supports `?search=` & `?tag=`) |
+| `GET` | `/api/tags` | `Clerk JWT` or `X-Admin-Key` | List all unique tags |
 | `GET` | `/api/qr/{short_code}` | — | Generate QR code (supports `?fg=` & `?bg=` colors) |
 | `GET` | `/api/health` | — | Health check |
 | `GET` | `/{short_code}` | — | Redirect to the original URL |
+
+#### Authentication
+
+Management endpoints (those marked above) accept **either** of two credentials:
+
+1. **Clerk JWT (preferred)** — send `Authorization: Bearer <clerk-jwt>`. Verified against the configured `CLERK_ISSUER` (the JWT `iss` claim must match) and validated for expiry and signature. This is the recommended path for browser, CI, and programmatic clients.
+2. **`X-Admin-Key` (fallback)** — send the `X-Admin-Key: your-admin-key` header. Accepted in **all** environments (including production) when `TINYLNK_ADMIN_KEY` is set. If `TINYLNK_ADMIN_KEY` is unset or empty, the fallback is disabled and only Clerk JWT authentication works.
+
+Clerk JWT is checked first; if it is absent or invalid, the request falls back to `X-Admin-Key`. Use `X-Admin-Key` alone when Clerk is not configured.
 
 ### Create Short URL
 
@@ -177,13 +186,25 @@ Copy `.env.example` to `.env` and customise:
 | Environment Variable | Default | Description |
 | --- | --- | --- |
 | `SQLITE_DB_PATH` | `urlshortener.db` | Path to the SQLite database file |
-| `TINYLNK_ADMIN_KEY` | *(auto-generated)* | **Required for production.** Secret key for management operations. If unset, an ephemeral key is printed to stdout on startup — it will be lost on restart. |
+| `TINYLNK_ADMIN_KEY` | *(empty)* | **Required if you use `X-Admin-Key` auth** (e.g. server-to-server automation without Clerk). Secret key for management operations. If unset, the `X-Admin-Key` fallback is disabled; browser clients can still sign in via Clerk JWT. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
 | `TINYLNK_ENABLE_DOCS` | `false` | Expose the OpenAPI schema and Swagger UI at `/openapi.json` and `/docs` |
 | `LOG_LEVEL` | `INFO` | Logging threshold: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
 | `LOG_FORMAT` | `text` | Set to `json` for structured logs |
 | `SENTRY_DSN` | *(empty)* | Optional Sentry error-tracking DSN |
+| `CLERK_PUBLISHABLE_KEY` | *(empty)* | Clerk publishable (a.k.a. "anonymous") key for the frontend. When set, enables Clerk JWT verification on management endpoints. |
+| `CLERK_SECRET_KEY` | *(empty)* | Clerk secret key, used by the backend to verify inbound JWTs. Required when `CLERK_PUBLISHABLE_KEY` is set. |
+| `CLERK_ISSUER` | *(empty)* | Expected `iss` claim value in incoming Clerk JWTs; the backend only accepts tokens whose issuer matches. Required when Clerk auth is enabled. |
+
+#### Authentication Flow
+
+Authentication on management endpoints follows a **preferred-then-fallback** model:
+
+1. **Clerk JWT first** — If the `Authorization: Bearer <token>` header is present, the token is verified against `CLERK_SECRET_KEY` and its `iss` claim must equal `CLERK_ISSUER`. This is the preferred path and requires all three Clerk variables to be configured.
+2. **`X-Admin-Key` fallback** — If no Bearer token is supplied (or it fails verification), the `X-Admin-Key` header is checked instead. This works in every environment, including production, as long as `TINYLNK_ADMIN_KEY` is set.
+
+If neither credential is valid, the request is rejected with `401 Unauthorized`. Use Clerk when you have end users or a browser frontend that can obtain a session token; use `X-Admin-Key` for simple server-to-server or administrative automation without an identity provider.
 
 ## Project Structure
 
@@ -229,8 +250,10 @@ tinylnk/
 
 ## Security
 
-- **Admin key authentication** — management endpoints require the
-  `X-Admin-Key` header
+- **Authentication** — management endpoints accept a Clerk JWT
+  (`Authorization: Bearer <clerk-jwt>`, preferred) or the `X-Admin-Key`
+  header (fallback). See the [Authentication Flow](#authentication-flow)
+  section for details.
 - **CORS lockdown** — only configured origins can make cross-origin
   requests
 - **Path traversal protection** — static assets are served from an allowed
@@ -253,8 +276,8 @@ tinylnk/
 > **Note:** HTTPS must be provided by a reverse proxy or hosting platform.
 > Security headers do not enable TLS on their own.
 >
-> **⚠️ Important:** Always set `TINYLNK_ADMIN_KEY` in production. Otherwise,
-> a random key is generated and logged on startup; it changes after a restart.
+> **⚠️ Important:** If you rely on `X-Admin-Key` authentication, always set
+> `TINYLNK_ADMIN_KEY` in production — when unset, that path is disabled entirely.
 
 ## Keyboard Shortcuts
 
