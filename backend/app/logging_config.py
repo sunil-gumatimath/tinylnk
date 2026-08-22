@@ -15,7 +15,6 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 _RESERVED_PATH_SEGMENTS = {

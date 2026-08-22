@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# Keep CI to real problems: errors, bugs, imports, unused vars.
+# Style families (UP/BLE/SIM/…) intentionally not enabled — enable deliberately later.
+select = ["E", "F", "W", "B", "I"]
+ignore = [
+    "E402", # module-level imports after load_dotenv() — intentional env-first bootstrap
+    "B008", # function calls in defaults — FastAPI Depends()/Query() idiom
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

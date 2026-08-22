@@ -1,17 +1,19 @@
 """Database CRUD operations for the URL shortener."""
 
 import csv
-from io import StringIO
-from urllib.parse import urlparse
 import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from io import StringIO
+from urllib.parse import urlparse
 
 from sqlalchemy import text as _sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from user_agents import parse
+
 from . import models, schemas
+
 
 def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
     """Look up a URL by its short code or custom alias (fresh from DB)."""
@@ -44,7 +46,10 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
         short_code="",  # Placeholder, will be set after flush
         custom_alias=url_data.custom_alias,
         expires_at=expires_at,
-        max_clicks=url_data.max_clicks,
+        # ``or None`` mirrors update_url's normalization: even a programmatic
+        # caller bypassing schema validation cannot store max_clicks=0 (which
+        # would make the link born-dead).
+        max_clicks=url_data.max_clicks or None,
         tag=url_data.tag,
     )
     db.add(db_url)
@@ -62,9 +67,9 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
 
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise ValueError("A link with this alias already exists.")
+        raise ValueError("A link with this alias already exists.") from exc
     db.refresh(db_url)
     return db_url
 
@@ -95,7 +100,8 @@ def update_url(
 
     if data.expires_in_hours is not None:
         if data.expires_in_hours <= 0:
-            url.expires_at = None  # Clear expiration
+            url.expires_at = None  # 0 = clear expiration (UPDATE-only affordance;
+            # the schema enforces ge=0 here vs ge=1 on create)
         else:
             url.expires_at = datetime.now(timezone.utc) + timedelta(
                 hours=data.expires_in_hours
@@ -268,11 +274,18 @@ def get_recent_urls(
     query = db.query(models.URL)
 
     if search:
-        pattern = f"%{search}%"
+        # Escape LIKE wildcards so user-supplied %, _, and \ are matched
+        # literally instead of widening the search.
+        escaped = (
+            search.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
         query = query.filter(
-            models.URL.original_url.ilike(pattern)
-            | models.URL.short_code.ilike(pattern)
-            | models.URL.custom_alias.ilike(pattern)
+            models.URL.original_url.ilike(pattern, escape="\\")
+            | models.URL.short_code.ilike(pattern, escape="\\")
+            | models.URL.custom_alias.ilike(pattern, escape="\\")
         )
 
     if tag:

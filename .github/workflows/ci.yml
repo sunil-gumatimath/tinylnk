@@ -74,7 +74,7 @@ jobs:
       - name: Run tests with pytest
         run: |
           pip install pytest pytest-asyncio httpx
-          python -m pytest tests/ -v --tb=short
+          python -m pytest backend/tests -v --tb=short
         continue-on-error: false
 
       - name: Upload test results

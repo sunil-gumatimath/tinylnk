@@ -8,18 +8,28 @@ class URLCreate(BaseModel):
     """Schema for creating a new short URL."""
     url: str
     custom_alias: Optional[str] = None
-    expires_in_hours: Optional[int] = None  # None = never expires
-    max_clicks: Optional[int] = None  # None = unlimited clicks
-    tag: Optional[str] = None
+    # None = never expires. Must be >= 1 hour on create; clearing an existing
+    # expiry is an UPDATE operation (see URLUpdate.expires_in_hours).
+    expires_in_hours: Optional[int] = Field(default=None, ge=1)
+    # None = unlimited clicks. Must be >= 1: 0 or negative would create a
+    # born-dead link that is dead on its very first redirect.
+    max_clicks: Optional[int] = Field(default=None, ge=1)
+    # Stored in a String(50) column, so cap input at the DB limit.
+    tag: Optional[str] = Field(default=None, max_length=50)
 
 
 class URLUpdate(BaseModel):
     """Schema for updating an existing short URL."""
     original_url: Optional[str] = None
     custom_alias: Optional[str] = None
-    tag: Optional[str] = None
-    expires_in_hours: Optional[int] = None  # Resets expiry from now
-    max_clicks: Optional[int] = None
+    # Stored in a String(50) column, so cap input at the DB limit.
+    tag: Optional[str] = Field(default=None, max_length=50)
+    # NOTE: ge=0 here (vs ge=1 on URLCreate) is intentional — on UPDATE,
+    # expires_in_hours=0 means "clear the expiry" (crud.update_url maps
+    # <= 0 -> NULL). Omitting the field leaves expiry unchanged.
+    expires_in_hours: Optional[int] = Field(default=None, ge=0)
+    # None = leave the click limit unchanged; otherwise must be >= 1.
+    max_clicks: Optional[int] = Field(default=None, ge=1)
 
 
 class URLResponse(BaseModel):

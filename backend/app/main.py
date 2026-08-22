@@ -1,21 +1,22 @@
 """FastAPI URL Shortener — Main Application."""
 
 import html
+import io
 import logging
 import os
-import io
-import secrets
-from sqlalchemy import text
 
 from dotenv import load_dotenv
+from sqlalchemy import text
+
 load_dotenv()  # Load .env before any os.getenv() calls
 
-import qrcode
-
 from datetime import datetime, timezone
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+
+import qrcode
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from PIL import ImageColor
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -23,9 +24,9 @@ from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
+from .auth import AuthUser
 from .database import Base, engine, get_db
-from .logging_config import setup_logging, RequestLogMiddleware
-from .auth import require_auth, AuthUser
+from .logging_config import RequestLogMiddleware, setup_logging
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
 # Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
@@ -309,7 +310,7 @@ async def shorten_url(
     try:
         db_url = crud.create_short_url(db, url_data)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     # Build the short URL
     base_url = str(request.base_url).rstrip("/")
@@ -370,7 +371,7 @@ async def update_url_endpoint(
     try:
         updated = crud.update_url(db, url, update_data)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     base_url = str(request.base_url).rstrip("/")
     code = updated.custom_alias or updated.short_code
@@ -562,16 +563,34 @@ async def get_qr_code(
     fg_color = f"#{fg}" if len(fg) == 6 and all(c in "0123456789abcdefABCDEF" for c in fg) else fg
     bg_color = f"#{bg}" if len(bg) == 6 and all(c in "0123456789abcdefABCDEF" for c in bg) else bg
 
+    # Reject unknown color names/values with 400 instead of a 500 from PIL
+    for name, value in (("fg", fg_color), ("bg", bg_color)):
+        try:
+            ImageColor.getrgb(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid {name} color: use a hex value or a known color name.",
+            ) from None
+
     return Response(content=_generate_qr(short_url, fg_color, bg_color), media_type="image/png")
 
 
 
 @app.get("/api/health")
 async def health_check(db: Session = Depends(get_db)):
-    """Health check with DB connectivity verification."""
+    """Health check with DB connectivity verification.
+
+    Returns 503 when the database is unreachable so that Docker HEALTHCHECK
+    and load-balancer probes actually detect the failure.
+    """
     try:
         db.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
         db_ok = False
-    return {"status": "ok", "database": "connected" if db_ok else "disconnected"}
+    body = {"status": "ok" if db_ok else "error",
+            "database": "connected" if db_ok else "disconnected"}
+    if not db_ok:
+        return JSONResponse(status_code=503, content=body)
+    return body
