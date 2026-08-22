@@ -26,7 +26,9 @@ export function EditModal({ open, loading, record, onSave, onClose }: EditModalP
     if (record && open) {
       form.setFieldsValue({
         original_url: record.original_url,
-        custom_alias: record.short_code,
+        // Prefill the editable custom alias; fall back to the random short
+        // code only when no alias exists yet (it stays editable either way).
+        custom_alias: record.custom_alias || record.short_code || '',
         tag: record.tag ?? '',
         expires_in_hours: null,
         max_clicks: record.max_clicks,
@@ -64,7 +66,7 @@ export function EditModal({ open, loading, record, onSave, onClose }: EditModalP
         </Button>,
       ]}
     >
-      <Form form={form} layout="vertical" className="edit-form" style={{ marginTop: 16 }}>
+      <Form form={form} layout="vertical" className="edit-form">
         <Form.Item
           name="original_url"
           label="Destination URL"

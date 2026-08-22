@@ -8,6 +8,8 @@ export interface ShortenedURL {
   max_clicks: number | null;
   tag: string | null;
   click_count: number;
+  /** Custom alias when one exists; absent/null otherwise. */
+  custom_alias?: string | null;
 }
 
 export interface ClickEvent {

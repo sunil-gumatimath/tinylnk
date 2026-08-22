@@ -30,19 +30,33 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
   const [fgColor, setFgColor] = useState('black');
   const [bgColor, setBgColor] = useState('white');
 
-  // Build URL with color params
-  const qrSrc = currentQrUrl
-    ? `${currentQrUrl}?fg=${fgColor}&bg=${bgColor}`
+  // Build URL with color params for /api/qr/{short_code}
+  const cleanCode = currentQrUrl ? currentQrUrl.replace(/^\/api\/qr\//, '').replace(/^\//, '') : null;
+  const qrSrc = cleanCode
+    ? `/api/qr/${encodeURIComponent(cleanCode)}?fg=${fgColor}&bg=${bgColor}`
     : null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!qrSrc) return;
-    const anchor = document.createElement('a');
-    anchor.href = qrSrc;
-    anchor.download = 'tinylnk-qr.png';
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
+    try {
+      const response = await fetch(qrSrc);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = `tinylnk-qr-${cleanCode || 'code'}.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      const anchor = document.createElement('a');
+      anchor.href = qrSrc;
+      anchor.download = `tinylnk-qr-${cleanCode || 'code'}.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    }
   };
 
   return (

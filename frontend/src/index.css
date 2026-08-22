@@ -130,7 +130,7 @@ a {
 .header-nav {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .theme-toggle {
@@ -160,7 +160,7 @@ a {
 .content-wrapper {
   width: min(1180px, calc(100vw - 40px));
   margin: 0 auto;
-  padding: 36px 0 72px;
+  padding: 32px 0 72px;
 }
 
 .ambient-backdrop {
@@ -225,14 +225,14 @@ a {
   gap: 28px;
   align-items: start;
   min-height: auto;
-  padding: 28px 0 42px;
+  padding: 24px 0 40px;
 }
 
 .hero-badge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 8px 12px;
   border-radius: 999px;
   background: var(--badge-bg);
   border: 1px solid var(--line);
@@ -242,7 +242,7 @@ a {
 }
 
 .hero-subtitle {
-  margin: 22px 0 0;
+  margin: 16px 0 0;
   max-width: 42rem;
   color: var(--text-muted);
   font-size: 1.05rem;
@@ -259,8 +259,8 @@ a {
 .hero-features {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
-  margin-top: 32px;
+  gap: 16px;
+  margin-top: 28px;
 }
 
 .hero-feature {
@@ -273,7 +273,7 @@ a {
 }
 
 .hero-copy {
-  padding: 36px 8px 12px 0;
+  padding: 8px 0 0;
 }
 
 .hero-eyebrow,
@@ -297,7 +297,7 @@ a {
 .hero-copy h1,
 .section-heading h2,
 .section-heading .ant-typography {
-  margin: 18px 0 0;
+  margin: 16px 0 0;
   color: var(--heading);
   font-family: 'Space Grotesk', 'Manrope', sans-serif;
   font-size: clamp(3rem, 7vw, 5.6rem);
@@ -316,7 +316,7 @@ a {
 .section-heading .ant-typography.ant-typography-secondary,
 .section-heading .ant-typography + p,
 .section-heading-row p {
-  margin: 22px 0 0;
+  margin: 16px 0 0;
   max-width: 42rem;
   color: var(--text-muted);
   font-size: 1.05rem;
@@ -335,8 +335,8 @@ a {
 .primary-button {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
+  gap: 8px;
+  padding: 16px 20px;
   border: 0;
   border-radius: 16px;
   background: linear-gradient(135deg, var(--primary), var(--primary-strong));
@@ -357,12 +357,12 @@ a {
 .hero-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 34px;
+  gap: 16px;
+  margin-top: 32px;
 }
 
 .metric-card {
-  padding: 16px 18px;
+  padding: 16px;
   border-radius: 20px;
   border: 1px solid var(--line);
   background: var(--card-bg);
@@ -385,11 +385,11 @@ a {
 
 .composer-section,
 .links-section {
-  margin-top: 34px;
+  margin-top: 32px;
 }
 
 .section-heading {
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 
 .section-heading-row {
@@ -432,12 +432,12 @@ a {
 }
 
 .panel-header {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .panel-header h3,
 .chart-heading h4 {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--heading);
   font-family: 'Space Grotesk', sans-serif;
   font-size: 1.55rem;
@@ -445,7 +445,7 @@ a {
 }
 
 .shortener-form .ant-form-item {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .shortener-form .ant-form-item-label > label {
@@ -475,19 +475,19 @@ a {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .guidance-list {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 16px;
   color: var(--text-muted);
   line-height: 1.8;
 }
 
 .result-panel,
 .result-placeholder {
-  margin-top: 22px;
+  margin-top: 20px;
   padding: 20px;
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(29, 78, 216, 0.08), rgba(249, 115, 22, 0.08));
@@ -513,6 +513,7 @@ a {
   flex-direction: column;
   justify-content: center;
   align-items: center;
+  padding: 32px 24px;
 }
 
 .empty-state__icon {
@@ -537,7 +538,7 @@ a {
 }
 
 .result-link {
-  margin-top: 18px;
+  margin-top: 16px;
   color: var(--primary);
   font-size: 1.1rem;
   font-weight: 800;
@@ -545,7 +546,7 @@ a {
 }
 
 .result-origin {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--text-muted);
   word-break: break-word;
 }
@@ -553,20 +554,20 @@ a {
 .result-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .dashboard-section {
-  margin-top: 48px;
+  margin-top: 40px;
 }
 
 .dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: start;
-  gap: 18px;
-  margin-bottom: 22px;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .dashboard-header-info {
@@ -635,7 +636,7 @@ a {
 }
 
 .link-original {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--text-muted);
   word-break: break-word;
   line-height: 1.7;
@@ -654,8 +655,8 @@ a {
 .link-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .meta-tag.ant-tag {
@@ -700,7 +701,7 @@ a {
 
 .stats-shell {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .stats-overview {
@@ -710,7 +711,7 @@ a {
 }
 
 .stats-hero h3 {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: var(--heading);
   font-family: 'Space Grotesk', sans-serif;
   font-size: 2rem;
@@ -718,7 +719,7 @@ a {
 }
 
 .stats-hero p {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: var(--text-muted);
   word-break: break-word;
   line-height: 1.7;
@@ -763,7 +764,7 @@ a {
 
 .chart-wrap {
   height: 260px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .chart-wrap.compact {
@@ -779,7 +780,7 @@ a {
 .activity-list {
   display: grid;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 16px;
   max-height: 320px;
   overflow: auto;
 }
@@ -794,7 +795,7 @@ a {
 .activity-time {
   color: var(--text-muted);
   font-size: 0.92rem;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .activity-row {
@@ -808,7 +809,7 @@ a {
 .qr-shell {
   display: flex;
   justify-content: center;
-  padding: 20px 0 8px;
+  padding: 16px 0 8px;
 }
 
 .qr-image {
@@ -869,7 +870,7 @@ a {
 }
 
 @media (max-width: 720px) {
-  .page-shell {
+  .content-wrapper {
     width: min(100vw - 24px, 1180px);
     padding-top: 18px;
   }
@@ -913,7 +914,7 @@ a {
 .search-toolbar {
   display: flex;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
@@ -932,7 +933,7 @@ a {
 .qr-customizer {
   display: grid;
   gap: 16px;
-  margin-top: 18px;
+  margin-top: 16px;
   padding: 16px 0 0;
   border-top: 1px solid var(--line);
 }

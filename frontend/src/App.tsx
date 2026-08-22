@@ -336,24 +336,23 @@ function App() {
 	};
 
 	useEffect(() => {
-		if (isSignedIn) {
-			fetchRecentLinks();
+		if (!isSignedIn) {
+			setRecentLinks([]);
+			setAvailableTags([]);
+			return;
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
 
-	useEffect(() => {
-		if (!isSignedIn) return;
 		const controller = new AbortController();
 		const timer = setTimeout(() => {
 			fetchRecentLinks(searchQuery, filterTag, controller.signal);
 		}, 300);
+
 		return () => {
 			clearTimeout(timer);
 			controller.abort();
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [searchQuery, filterTag]);
+	}, [isSignedIn, searchQuery, filterTag]);
 
 	return (
 		<MotionConfig reducedMotion="user">
