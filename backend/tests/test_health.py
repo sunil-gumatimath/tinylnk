@@ -44,3 +44,21 @@ class TestHealthCheck:
         """The health response is JSON."""
         response = client.get("/api/health")
         assert response.headers.get("content-type") == "application/json"
+
+    def test_health_returns_503_when_db_down(self, client: TestClient):
+        """A dead database must fail the probe: HTTP 503, not 200."""
+        from app.database import get_db
+        from app.main import app
+
+        class BrokenDB:
+            def execute(self, *_args, **_kwargs):
+                raise RuntimeError("simulated DB outage")
+
+        app.dependency_overrides[get_db] = lambda: BrokenDB()
+        try:
+            response = client.get("/api/health")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 503
+        assert response.json() == {"status": "error", "database": "disconnected"}

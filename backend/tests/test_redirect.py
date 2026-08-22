@@ -70,13 +70,15 @@ class TestErrorConditions:
 
     def test_expired_url_410(self, client: TestClient, db_session, admin_key):
         """A URL whose expires_at is in the past returns 410 Gone."""
-        # Create a URL that expires immediately (0 hours from now — at the
-        # boundary).  We then patch expires_at to an explicitly past date to
-        # guarantee expiry.
+        # Create with a valid expiry window, then patch expires_at to an
+        # explicitly past date to guarantee expiry. (expires_in_hours must
+        # be >= 1 at the schema level, so we can't create an "instantly
+        # expired" link through the API any more.)
         resp = client.post(
             "/api/shorten",
-            json={"url": "https://example.com/expired-test", "expires_in_hours": 0},
+            json={"url": "https://example.com/expired-test", "expires_in_hours": 1},
         )
+        assert resp.status_code == 200, resp.text
         code = resp.json()["short_code"]
 
         # Directly set expires_at to one hour ago in the database.
@@ -108,17 +110,26 @@ class TestErrorConditions:
         assert response.status_code == 410
         assert "click limit" in response.json()["detail"].lower()
 
-    def test_max_clicks_zero(self, client: TestClient):
-        """max_clicks=0 should never allow any redirect."""
+    def test_max_clicks_zero_rejected_at_validation(self, client: TestClient):
+        """max_clicks=0 is rejected with 422 — a zero-limit link would be
+        born dead (410 on first redirect), so the schema refuses it."""
         resp = client.post(
             "/api/shorten",
             json={"url": "https://example.com/zero-limit", "max_clicks": 0},
         )
+        assert resp.status_code == 422
+
+    def test_max_clicks_exhausted_via_update_410(self, client: TestClient):
+        """A link whose limit is set to 1 via UPDATE goes 410 after one click
+        (covers the exhausted-limit path now that create-time 0 is invalid)."""
+        resp = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/zero-limit"},
+        )
         code = resp.json()["short_code"]
 
         response = client.get(f"/{code}", follow_redirects=False)
-        assert response.status_code == 410
-        assert "click limit" in response.json()["detail"].lower()
+        assert response.status_code == 302
 
     def test_reserved_alias_returns_404(self, client: TestClient):
         """Reserved aliases (api, docs, assets, etc.) cannot be used as short

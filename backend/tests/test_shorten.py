@@ -256,12 +256,12 @@ class TestSelfReferencing:
         from app.main import app
         client = TestClient(app, base_url="https://example.com")
         # Override the database dependency for this client too
-        from app.database import get_db
         # We need a real session — import from conftest is tricky so we
         # create a minimal inline one.
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
-        from app.database import Base
+
+        from app.database import Base, get_db
 
         engine = create_engine(
             "sqlite:///:memory:",
@@ -363,3 +363,144 @@ class TestEdgeCases:
         )
         assert response.status_code == 200
         assert response.json()["original_url"] == long_url
+
+
+class TestParameterValidation:
+    """max_clicks, expires_in_hours, and tag must pass schema validation."""
+
+    def test_negative_max_clicks_rejected(self, client: TestClient):
+        """A negative max_clicks must be rejected (it used to be stored,
+        producing a born-dead link)."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/neg-clicks", "max_clicks": -5},
+        )
+        assert response.status_code == 422
+
+    def test_zero_max_clicks_rejected(self, client: TestClient):
+        """max_clicks=0 allows zero clicks; only None or >= 1 is valid."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/zero-clicks", "max_clicks": 0},
+        )
+        assert response.status_code == 422
+
+    def test_zero_expires_in_hours_rejected_on_create(self, client: TestClient):
+        """On create, expires_in_hours must be a positive number of hours."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/zero-expiry", "expires_in_hours": 0},
+        )
+        assert response.status_code == 422
+
+    def test_negative_expires_in_hours_rejected_on_create(self, client: TestClient):
+        """Negative expires_in_hours is rejected on create."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/neg-expiry", "expires_in_hours": -3},
+        )
+        assert response.status_code == 422
+
+    def test_tag_over_50_chars_rejected(self, client: TestClient):
+        """A tag longer than the String(50) column is rejected with 422
+        instead of being silently truncated/failing on strict databases."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/long-tag", "tag": "t" * 60},
+        )
+        assert response.status_code == 422
+
+    def test_tag_of_exactly_50_chars_accepted(self, client: TestClient):
+        """A 50-character tag fits the column and is accepted verbatim."""
+        tag = "t" * 50
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/max-tag", "tag": tag},
+        )
+        assert response.status_code == 200
+        assert response.json()["tag"] == tag
+
+    def test_update_with_zero_expires_in_hours_clears_expiry(
+        self, client: TestClient, admin_key: str
+    ):
+        """PUT with expires_in_hours=0 clears an existing expiry — update
+        semantics intentionally allow 0 even though create rejects it."""
+        created = client.post(
+            "/api/shorten",
+            json={
+                "url": "https://example.com/clear-me",
+                "expires_in_hours": 24,
+                "custom_alias": "clear-expiry-test",
+            },
+        )
+        assert created.status_code == 200
+        assert created.json()["expires_at"] is not None
+
+        updated = client.put(
+            "/api/urls/clear-expiry-test",
+            json={"expires_in_hours": 0},
+            headers={"X-Admin-Key": admin_key},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["expires_at"] is None
+
+
+class TestRecentSearchWildcardEscaping:
+    """GET /api/recent search must treat user-supplied % and _ literally."""
+
+    def test_search_percent_matched_literally(self, client, admin_key: str):
+        """Searching '100%' finds only URLs containing the literal text, and a
+        bare '%' does not act as a match-all wildcard."""
+        client.post(
+            "/api/shorten", json={"url": "https://example.com/100%_discount"}
+        )
+        client.post(
+            "/api/shorten", json={"url": "https://example.com/plain-offer"}
+        )
+
+        response = client.get(
+            "/api/recent",
+            params={"search": "100%"},
+            headers={"X-Admin-Key": admin_key},
+        )
+        assert response.status_code == 200
+        urls = [item["original_url"] for item in response.json()]
+        assert any("100%" in u for u in urls)
+        assert all("plain-offer" not in u for u in urls)
+
+        # A bare '%' must match only URLs containing a literal '%', not every
+        # URL (this is the LIKE-wildcard injection being guarded against).
+        response = client.get(
+            "/api/recent",
+            params={"search": "%"},
+            headers={"X-Admin-Key": admin_key},
+        )
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "id": response.json()[0]["id"],
+                "original_url": "https://example.com/100%_discount",
+                "short_code": response.json()[0]["short_code"],
+                "short_url": response.json()[0]["short_url"],
+                "created_at": response.json()[0]["created_at"],
+                "expires_at": None,
+                "max_clicks": None,
+                "tag": None,
+                "click_count": 0,
+            }
+        ]
+
+    def test_search_plain_text_still_works(self, client, admin_key: str):
+        """An ordinary text search still matches the target URL."""
+        client.post(
+            "/api/shorten", json={"url": "https://example.com/docs-page"}
+        )
+
+        response = client.get(
+            "/api/recent",
+            params={"search": "docs-page"},
+            headers={"X-Admin-Key": admin_key},
+        )
+        assert response.status_code == 200
+        urls = [item["original_url"] for item in response.json()]
+        assert any("docs-page" in u for u in urls)

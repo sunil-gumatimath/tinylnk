@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from app.utils import anonymize_ip, is_safe_url, is_valid_alias
 
-
 # ===========================================================================
 # SSRF — is_safe_url
 # ===========================================================================

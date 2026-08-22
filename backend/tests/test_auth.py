@@ -2,11 +2,18 @@
 
 Public endpoints (create short URL, redirect, QR, health) should work without
 any credentials.  Protected endpoints (recent, stats, update, delete, tags,
-export) require a Clerk JWT.  In test mode (``TINYLNK_ENV=test``) the legacy
-``X-Admin-Key`` header is also accepted as a convenience fallback.
+export) accept either a Clerk JWT or the ``X-Admin-Key`` header checked
+against ``TINYLNK_ADMIN_KEY`` (set by conftest for the test run).
 """
 
+import time
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+
+from app import auth
 
 
 class TestPublicEndpoints:
@@ -70,7 +77,7 @@ class TestProtectedEndpointsWithoutKey:
 
 class TestProtectedEndpointsWithKey:
     """Protected endpoints work when a valid admin key is provided
-    (test-mode fallback — ``TINYLNK_ENV=test``)."""
+    (``X-Admin-Key`` fallback — key set by conftest)."""
 
     def test_recent_with_valid_key_returns_200(self, client: TestClient,
                                                 admin_key: str):
@@ -163,7 +170,8 @@ class TestInvalidKey:
                 kwargs["json"] = body
             response = getattr(client, method)(path, **kwargs)
             assert response.status_code == 401, (
-                f"{method.upper()} {path} with key='wrong-key' expected 401, got {response.status_code}"
+                f"{method.upper()} {path} with key='wrong-key' expected 401,"
+                f" got {response.status_code}"
             )
 
     def test_update_with_invalid_key(self, client: TestClient):
@@ -196,3 +204,128 @@ class TestErrorMessage:
         response = client.get("/api/recent")
         assert response.status_code == 401
         assert response.json() == {"detail": "Unauthorized"}
+
+
+# ---------------------------------------------------------------------------
+# Clerk JWT verification (hermetic unit tests — no network, no real JWKS).
+# ---------------------------------------------------------------------------
+
+_CLERK_TEST_ISSUER = "https://clerk.tinylnk.test"
+
+
+class _StubSigningKey:
+    """Duck-typed stand-in for ``jwt.PyJWK`` (only ``.key`` is accessed)."""
+
+    def __init__(self, key):
+        self.key = key
+
+
+class _StubJWKClient:
+    """Offline ``PyJWKClient`` double that serves a fixed signing key."""
+
+    def __init__(self, key):
+        self._key = key
+
+    def get_signing_key_from_jwt(self, token):
+        return _StubSigningKey(self._key)
+
+
+def _rsa_keypair():
+    """Generate a throwaway RSA key pair for offline JWT signing."""
+    private_key = rsa.generate_private_key(
+        public_exponent=65537, key_size=2048,
+    )
+    return private_key, private_key.public_key()
+
+
+def _rs256_token(private_key, *, iss=_CLERK_TEST_ISSUER, include_iss=True,
+                 exp_offset=300):
+    """Build a properly signed RS256 token resembling a Clerk session JWT."""
+    now = int(time.time())
+    claims: dict = {"sub": "user_test_123", "iat": now, "exp": now + exp_offset}
+    if include_iss:
+        claims["iss"] = iss
+    return jwt.encode(claims, private_key, algorithm="RS256")
+
+
+class TestClerkTokenVerification:
+    """Regression tests for Clerk JWT verification.
+
+    Hermetic: the JWKS HTTP lookup is replaced by an offline stub and the
+    RSA keys are generated locally, so nothing here touches the network.
+    Covers malformed input, algorithm pinning, expiry, and the required
+    ``iss``-claim match against the configured Clerk issuer.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cold_jwks_cache(self, monkeypatch):
+        """Start each test with an empty module-level JWKS client cache."""
+        monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", None)
+
+    @staticmethod
+    def _stub_jwks(monkeypatch, public_key):
+        """Route verify_clerk_token to an offline JWKS serving public_key."""
+        monkeypatch.setenv("CLERK_ISSUER", _CLERK_TEST_ISSUER)
+        monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
+
+    def test_verify_rejects_garbage_token(self, monkeypatch):
+        """Malformed input returns None without raising (no env vars set)."""
+        monkeypatch.delenv("CLERK_ISSUER", raising=False)
+        monkeypatch.delenv("CLERK_PUBLISHABLE_KEY", raising=False)
+        assert auth.verify_clerk_token("not.a.jwt") is None
+
+    def test_verify_rejects_expired_or_bad_signature_token(self, monkeypatch):
+        """An HS256-signed token is rejected by RS256-only alg pinning."""
+        _, public_key = _rsa_keypair()
+        self._stub_jwks(monkeypatch, public_key)
+        hs256_token = jwt.encode(
+            {"sub": "user_1"}, "hmac-test-secret-0123456789abcdef", algorithm="HS256",
+        )
+        assert auth.verify_clerk_token(hs256_token) is None
+
+    def test_verify_rejects_expired_rs256_token(self, monkeypatch):
+        """An otherwise-valid RS256 token past its exp claim returns None."""
+        private_key, public_key = _rsa_keypair()
+        self._stub_jwks(monkeypatch, public_key)
+        expired = _rs256_token(private_key, exp_offset=-300)
+        assert auth.verify_clerk_token(expired) is None
+
+    def test_verify_accepts_valid_rs256_token_with_matching_issuer(
+        self, monkeypatch,
+    ):
+        """Happy path: correct signature, fresh exp, matching iss claim."""
+        private_key, public_key = _rsa_keypair()
+        self._stub_jwks(monkeypatch, public_key)
+        token = _rs256_token(private_key)
+        assert auth.verify_clerk_token(token) == "user_test_123"
+
+    def test_verify_rejects_wrong_issuer_claim(self, monkeypatch):
+        """A validly-signed token whose iss mismatches must be rejected."""
+        private_key, public_key = _rsa_keypair()
+        self._stub_jwks(monkeypatch, public_key)
+        forged = _rs256_token(private_key, iss="https://attacker.example")
+        assert auth.verify_clerk_token(forged) is None
+
+    def test_verify_rejects_missing_issuer_claim(self, monkeypatch):
+        """A validly-signed token with NO iss claim must be rejected."""
+        private_key, public_key = _rsa_keypair()
+        self._stub_jwks(monkeypatch, public_key)
+        token = _rs256_token(private_key, include_iss=False)
+        assert auth.verify_clerk_token(token) is None
+
+    def test_verify_returns_none_when_jwks_lookup_raises(self, monkeypatch):
+        """If PyJWKClient blows up, verify_clerk_token still returns None."""
+
+        class _ExplodingJWKClient:
+            def __init__(self, uri):
+                self.uri = uri
+
+            def get_signing_key_from_jwt(self, token):
+                raise RuntimeError("JWKS endpoint unreachable")
+
+        monkeypatch.setenv("CLERK_ISSUER", _CLERK_TEST_ISSUER)
+        monkeypatch.setattr(auth, "PyJWKClient", _ExplodingJWKClient)
+        token = jwt.encode(
+            {"sub": "user_1"}, "hmac-test-secret-0123456789abcdef", algorithm="HS256",
+        )
+        assert auth.verify_clerk_token(token) is None

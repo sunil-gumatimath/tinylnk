@@ -98,3 +98,24 @@ class TestQrCache:
         response = client.get(f"/api/qr/{code}")
         assert response.status_code == 200
         assert response.content[:8] == PNG_MAGIC
+
+
+class TestQrColorValidation:
+    """Invalid ?fg/?bg values must return 400, not a 500 from PIL."""
+
+    def test_qr_invalid_fg_color_returns_400(self, client: TestClient,
+                                             sample_url: str):
+        response = client.get(f"/api/qr/{sample_url}?fg=not-a-color")
+        assert response.status_code == 400
+        assert "fg" in response.json()["detail"]
+
+    def test_qr_invalid_bg_color_returns_400(self, client: TestClient,
+                                             sample_url: str):
+        response = client.get(f"/api/qr/{sample_url}?bg=%23zzzzzz")
+        assert response.status_code == 400
+        assert "bg" in response.json()["detail"]
+
+    def test_qr_valid_colors_still_work(self, client: TestClient,
+                                        sample_url: str):
+        response = client.get(f"/api/qr/{sample_url}?fg=1d4ed8&bg=white")
+        assert response.status_code == 200

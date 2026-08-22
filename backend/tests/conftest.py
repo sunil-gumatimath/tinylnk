@@ -12,7 +12,6 @@ if _backend_dir not in sys.path:
 # Set test environment variables BEFORE importing the application.
 # ---------------------------------------------------------------------------
 os.environ["TINYLNK_ADMIN_KEY"] = "test-admin-key-12345"
-os.environ["TINYLNK_ENV"] = "test"
 # Write the real SQLite file to a temp location (the ``get_db`` override in
 # the ``client`` fixture ensures no test ever touches this file).
 os.environ["SQLITE_DB_PATH"] = os.path.abspath(
@@ -25,9 +24,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import models  # noqa: F401 — registers models on Base.metadata
 from app.database import Base, get_db
 from app.main import app, limiter
-from app import models  # noqa: F401 — registers models on Base.metadata
 
 # ---------------------------------------------------------------------------
 # Disable rate limiting for tests.  Setting ``enabled = False`` causes

@@ -8,10 +8,10 @@ the API.
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
-
 
 # ---------------------------------------------------------------------------
 # create_short_url
@@ -214,19 +214,18 @@ class TestUpdateUrl:
         )
         assert updated.expires_at is None
 
-    def test_clear_max_clicks_with_negative(self, db_session: Session):
-        """Setting max_clicks to a negative or zero value clears the limit."""
+    def test_update_normalizes_nonpositive_max_clicks(self, db_session: Session):
+        """crud.update_url normalizes <= 0 to None as defense-in-depth for
+        programmatic callers that bypass schema validation (the schema itself
+        now rejects such values, so this uses ``model_construct``)."""
         url = crud.create_short_url(
             db_session,
             schemas.URLCreate(url="https://example.com/limit-set", max_clicks=5),
         )
         assert url.max_clicks == 5
 
-        updated = crud.update_url(
-            db_session,
-            url,
-            schemas.URLUpdate(max_clicks=-1),
-        )
+        bypassed = schemas.URLUpdate.model_construct(max_clicks=-1)
+        updated = crud.update_url(db_session, url, bypassed)
         assert updated.max_clicks is None
 
 
@@ -286,8 +285,147 @@ class TestIsUrlExpired:
         assert crud.is_url_expired(url) is False
 
     def test_expired(self, db_session: Session):
-        """A URL with expires_at in the past is expired."""
+        """A URL whose expires_at lies in the past is expired."""
+        # Note: build the past expiry directly on the model — the schema no
+        # longer accepts a negative expires_in_hours on create.
         url = crud.create_short_url(
-            db_session, schemas.URLCreate(url="https://example.com/past", expires_in_hours=-1),
+            db_session,
+            schemas.URLCreate(url="https://example.com/past"),
         )
+        url.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        db_session.commit()
         assert crud.is_url_expired(url) is True
+
+
+# ---------------------------------------------------------------------------
+# Schema validation — regression tests for the validation bugs
+# ---------------------------------------------------------------------------
+
+class TestSchemaValidation:
+    """URLCreate / URLUpdate reject invalid optional parameters."""
+
+    @pytest.mark.parametrize("bad_value", [-5, 0])
+    def test_urlcreate_rejects_nonpositive_max_clicks(self, bad_value: int):
+        """max_clicks must be None or >= 1 (0/negative made born-dead links)."""
+        with pytest.raises(ValidationError):
+            schemas.URLCreate(url="https://example.com/x", max_clicks=bad_value)
+
+    @pytest.mark.parametrize("bad_value", [0, -3])
+    def test_urlcreate_rejects_nonpositive_expires_in_hours(self, bad_value: int):
+        """expires_in_hours must be None or >= 1 on create."""
+        with pytest.raises(ValidationError):
+            schemas.URLCreate(
+                url="https://example.com/x", expires_in_hours=bad_value
+            )
+
+    def test_urlcreate_enforces_tag_max_length(self):
+        """Tags longer than the String(50) column fail validation; exactly 50
+        characters is allowed."""
+        with pytest.raises(ValidationError):
+            schemas.URLCreate(url="https://example.com/x", tag="t" * 51)
+        ok = schemas.URLCreate(url="https://example.com/x", tag="t" * 50)
+        assert ok.tag == "t" * 50
+
+    def test_urlcreate_still_allows_valid_values(self):
+        """Sanity check: a fully valid payload still constructs cleanly."""
+        data = schemas.URLCreate(
+            url="https://example.com/x",
+            max_clicks=10,
+            expires_in_hours=24,
+            tag="ok",
+        )
+        assert data.max_clicks == 10
+        assert data.expires_in_hours == 24
+        assert data.tag == "ok"
+
+    def test_urlupdate_zero_expires_in_hours_is_valid(self):
+        """UPDATE intentionally keeps ge=0 so clients can send 0 to clear an
+        existing expiry (see crud.update_url)."""
+        assert schemas.URLUpdate(expires_in_hours=0).expires_in_hours == 0
+
+    def test_urlupdate_rejects_negative_expires_in_hours(self):
+        with pytest.raises(ValidationError):
+            schemas.URLUpdate(expires_in_hours=-1)
+
+    def test_urlupdate_rejects_nonpositive_max_clicks(self):
+        with pytest.raises(ValidationError):
+            schemas.URLUpdate(max_clicks=0)
+
+    def test_urlupdate_enforces_tag_max_length(self):
+        with pytest.raises(ValidationError):
+            schemas.URLUpdate(tag="t" * 51)
+
+
+class TestValidationDefenseInDepth:
+    """crud-layer normalization for callers that bypass schema validation."""
+
+    def test_create_normalizes_zero_max_clicks(self, db_session: Session):
+        """Creating with max_clicks=0 while bypassing the schema stores NULL,
+        never a born-dead limit of 0 clicks."""
+        url_data = schemas.URLCreate.model_construct(
+            url="https://example.com/zero-clicks", max_clicks=0
+        )
+        url = crud.create_short_url(db_session, url_data)
+        assert url.max_clicks is None
+
+
+# ---------------------------------------------------------------------------
+# get_recent_urls — LIKE wildcard escaping in search
+# ---------------------------------------------------------------------------
+
+class TestGetRecentUrlsSearch:
+    """User-supplied search terms must be matched literally."""
+
+    def test_percent_is_literal_not_wildcard(self, db_session: Session):
+        """'%' in the search term no longer matches every URL."""
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/100%_off")
+        )
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/ordinary")
+        )
+        hits = {
+            u.original_url for u in crud.get_recent_urls(db_session, search="100%")
+        }
+        assert hits == {"https://example.com/100%_off"}
+
+    def test_underscore_is_literal_not_single_char_wildcard(
+        self, db_session: Session
+    ):
+        """'_' in the search term matches only a literal underscore."""
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/sale_tag")
+        )
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/saleXtag")
+        )
+        hits = {
+            u.original_url for u in crud.get_recent_urls(db_session, search="_tag")
+        }
+        assert hits == {"https://example.com/sale_tag"}
+
+    def test_backslash_is_literal(self, db_session: Session):
+        r"""A literal '\' in the search term matches only real backslashes."""
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url=r"https://example.com/win\path")
+        )
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/winzpath")
+        )
+        hits = {
+            u.original_url for u in crud.get_recent_urls(db_session, search="win\\")
+        }
+        assert hits == {r"https://example.com/win\path"}
+
+    def test_plain_text_search_still_matches(self, db_session: Session):
+        """Ordinary text searches are unaffected by the escaping."""
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://docs.example.com/guide")
+        )
+        crud.create_short_url(
+            db_session, schemas.URLCreate(url="https://example.com/other")
+        )
+        hits = {
+            u.original_url for u in crud.get_recent_urls(db_session, search="guide")
+        }
+        assert hits == {"https://docs.example.com/guide"}
