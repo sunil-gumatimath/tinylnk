@@ -93,24 +93,19 @@ The dev server proxies API requests to the backend automatically.
 | Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
 | `POST` | `/api/shorten` | — | Create a shortened URL |
-| `PUT` | `/api/urls/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Update a link's properties |
-| `DELETE` | `/api/urls/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Delete a short URL and its analytics |
-| `GET` | `/api/stats/{short_code}` | `Clerk JWT` or `X-Admin-Key` | Get analytics (supports `?start_date=` & `?end_date=`) |
-| `GET` | `/api/stats/{short_code}/export` | `Clerk JWT` or `X-Admin-Key` | Export analytics as CSV |
-| `GET` | `/api/recent` | `Clerk JWT` or `X-Admin-Key` | List recent links (supports `?search=` & `?tag=`) |
-| `GET` | `/api/tags` | `Clerk JWT` or `X-Admin-Key` | List all unique tags |
+| `PUT` | `/api/urls/{short_code}` | `Clerk JWT` | Update a link's properties |
+| `DELETE` | `/api/urls/{short_code}` | `Clerk JWT` | Delete a short URL and its analytics |
+| `GET` | `/api/stats/{short_code}` | `Clerk JWT` | Get analytics (supports `?start_date=` & `?end_date=`) |
+| `GET` | `/api/stats/{short_code}/export` | `Clerk JWT` | Export analytics as CSV |
+| `GET` | `/api/recent` | `Clerk JWT` | List recent links (supports `?search=` & `?tag=`) |
+| `GET` | `/api/tags` | `Clerk JWT` | List all unique tags |
 | `GET` | `/api/qr/{short_code}` | — | Generate QR code (supports `?fg=` & `?bg=` colors) |
 | `GET` | `/api/health` | — | Health check |
 | `GET` | `/{short_code}` | — | Redirect to the original URL |
 
 #### Authentication
 
-Management endpoints (those marked above) accept **either** of two credentials:
-
-1. **Clerk JWT (preferred)** — send `Authorization: Bearer <clerk-jwt>`. Verified against the configured `CLERK_ISSUER` (the JWT `iss` claim must match) and validated for expiry and signature. This is the recommended path for browser, CI, and programmatic clients.
-2. **`X-Admin-Key` (fallback)** — send the `X-Admin-Key: your-admin-key` header. Accepted in **all** environments (including production) when `TINYLNK_ADMIN_KEY` is set. If `TINYLNK_ADMIN_KEY` is unset or empty, the fallback is disabled and only Clerk JWT authentication works.
-
-Clerk JWT is checked first; if it is absent or invalid, the request falls back to `X-Admin-Key`. Use `X-Admin-Key` alone when Clerk is not configured.
+Management endpoints accept a **Clerk JWT**: send `Authorization: Bearer <clerk-jwt>`. Verified against the configured `CLERK_ISSUER` (the JWT `iss` claim must match) and validated for expiry and signature. This is the recommended path for browser, CI, and programmatic clients.
 
 ### Create Short URL
 
@@ -131,29 +126,43 @@ curl -X POST http://localhost:8000/api/shorten \
 ```bash
 curl -X PUT http://localhost:8000/api/urls/my-link \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer <clerk-jwt>" \
   -d '{
     "original_url": "https://example.com/new-destination",
     "tag": "updated-campaign"
   }'
 ```
 
+Every field is optional and omitted fields are left unchanged. To **remove**
+something, send an explicit clear sentinel:
+
+| Field | Clear sentinel | Example |
+| --- | --- | --- |
+| `custom_alias` | `""` (empty string) | `"custom_alias": ""` — fall back to the short code |
+| `expires_in_hours` | `0` | `"expires_in_hours": 0` — never expires |
+| `max_clicks` | `0` | `"max_clicks": 0` — unlimited clicks |
+
+Responses always include `custom_alias` separately from `short_code`, and all
+timestamps are serialized with an explicit UTC offset (e.g.
+`2026-01-01T12:00:00Z`), so browsers render them in the viewer's local time
+instead of misreading them as local.
+
 ### Get Link Statistics
 
 ```bash
 curl http://localhost:8000/api/stats/my-link \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer <clerk-jwt>"
 
 # With date range
 curl "http://localhost:8000/api/stats/my-link?start_date=2026-01-01&end_date=2026-03-31" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer <clerk-jwt>"
 ```
 
 ### Export Analytics as CSV
 
 ```bash
 curl http://localhost:8000/api/stats/my-link/export \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer <clerk-jwt>" \
   -o analytics.csv
 ```
 
@@ -162,11 +171,11 @@ curl http://localhost:8000/api/stats/my-link/export \
 ```bash
 # Search by URL, alias, or short code
 curl "http://localhost:8000/api/recent?search=github" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer <clerk-jwt>"
 
 # Filter by tag
 curl "http://localhost:8000/api/recent?tag=marketing" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer <clerk-jwt>"
 ```
 
 ### Custom QR Code
@@ -186,7 +195,7 @@ Copy `.env.example` to `.env` and customise:
 | Environment Variable | Default | Description |
 | --- | --- | --- |
 | `SQLITE_DB_PATH` | `urlshortener.db` | Path to the SQLite database file |
-| `TINYLNK_ADMIN_KEY` | *(empty)* | **Required if you use `X-Admin-Key` auth** (e.g. server-to-server automation without Clerk). Secret key for management operations. If unset, the `X-Admin-Key` fallback is disabled; browser clients can still sign in via Clerk JWT. |
+| `TINYLNK_ADMIN_KEY` | *(empty)* | **Deprecated.** This setting has no effect — authentication is handled exclusively by Clerk JWT. Remove it from your configuration. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
 | `TINYLNK_ENABLE_DOCS` | `false` | Expose the OpenAPI schema and Swagger UI at `/openapi.json` and `/docs` |
@@ -199,12 +208,9 @@ Copy `.env.example` to `.env` and customise:
 
 #### Authentication Flow
 
-Authentication on management endpoints follows a **preferred-then-fallback** model:
+Authentication on management endpoints uses **Clerk JWT** exclusively. Send `Authorization: Bearer <token>` on all protected endpoints. The token is verified against `CLERK_SECRET_KEY` and its `iss` claim must equal `CLERK_ISSUER`. This requires all three Clerk variables to be configured.
 
-1. **Clerk JWT first** — If the `Authorization: Bearer <token>` header is present, the token is verified against `CLERK_SECRET_KEY` and its `iss` claim must equal `CLERK_ISSUER`. This is the preferred path and requires all three Clerk variables to be configured.
-2. **`X-Admin-Key` fallback** — If no Bearer token is supplied (or it fails verification), the `X-Admin-Key` header is checked instead. This works in every environment, including production, as long as `TINYLNK_ADMIN_KEY` is set.
-
-If neither credential is valid, the request is rejected with `401 Unauthorized`. Use Clerk when you have end users or a browser frontend that can obtain a session token; use `X-Admin-Key` for simple server-to-server or administrative automation without an identity provider.
+If the token is invalid or absent, the request is rejected with `401 Unauthorized`. Use Clerk when you have end users or a browser frontend that can obtain a session token.
 
 ## Project Structure
 
@@ -245,14 +251,38 @@ tinylnk/
 
 - **Short Code Generation** — Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
+- **Database** — Single SQLite file with WAL mode and a 5s busy-timeout, so readers never block on writes. It is still a **single-writer** store: fine for personal and small-team use, not for high-concurrency workloads (which would need Postgres). A `schema_version` row is stamped at startup so stale database files fail loudly.
 - **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics are stored locally; tinylnk does not include third-party tracking.
 - **Rate Limiting** — SlowAPI limits sensitive endpoints, including shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), deletion (20/min), and QR generation (30/min).
+
+## Backups
+
+`scripts/backup.sh` (and `backup.ps1` on Windows) snapshots the SQLite file on a loop with retention pruning:
+
+```bash
+# Nightly backup via cron (host machine, Docker setup)
+0 2 * * * SQLITE_DB_PATH=/app/data/urlshortener.db BACKUP_DIR=/app/backups /path/to/tinylnk/scripts/backup.sh
+
+# Or as a Compose sidecar (runs alongside `app`, shares the data volume)
+backup:
+  image: alpine:3
+  volumes:
+    - ./data:/app/data
+    - ./backups:/app/backups
+    - ./scripts/backup.sh:/backup.sh:ro
+  environment:
+    - SQLITE_DB_PATH=/app/data/urlshortener.db
+    - BACKUP_DIR=/app/backups
+    - BACKUP_INTERVAL=86400
+  command: ["sh", "/backup.sh"]
+```
+
+Restore with `scripts/restore.sh <backup-file>` (stops writers first — see the script header).
 
 ## Security
 
 - **Authentication** — management endpoints accept a Clerk JWT
-  (`Authorization: Bearer <clerk-jwt>`, preferred) or the `X-Admin-Key`
-  header (fallback). See the [Authentication Flow](#authentication-flow)
+  (`Authorization: Bearer <clerk-jwt>`). See the [Authentication Flow](#authentication-flow)
   section for details.
 - **CORS lockdown** — only configured origins can make cross-origin
   requests
@@ -275,9 +305,6 @@ tinylnk/
 
 > **Note:** HTTPS must be provided by a reverse proxy or hosting platform.
 > Security headers do not enable TLS on their own.
->
-> **⚠️ Important:** If you rely on `X-Admin-Key` authentication, always set
-> `TINYLNK_ADMIN_KEY` in production — when unset, that path is disabled entirely.
 
 ## Keyboard Shortcuts
 

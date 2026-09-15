@@ -41,10 +41,9 @@ file on disk.
    ```
 
 2. **Set environment variables**
-   Copy `.env.example` → `.env` and fill in:
-   - `TINYLNK_ADMIN_KEY` — a strong random secret
-   - `TINYLNK_CORS_ORIGINS` — your frontend domain(s)
-   - `LOG_FORMAT=json` — for structured logging
+    Copy `.env.example` → `.env` and fill in:
+    - `TINYLNK_CORS_ORIGINS` — your frontend domain(s)
+    - `LOG_FORMAT=json` — for structured logging
 
 3. **Start the backend**
 
@@ -68,7 +67,7 @@ file on disk.
 
 ```bash
 cp .env.example .env
-# Edit .env — set TINYLNK_ADMIN_KEY and TINYLNK_CORS_ORIGINS
+# Edit .env — set TINYLNK_CORS_ORIGINS
 docker compose up -d
 ```
 
@@ -83,8 +82,7 @@ An example Caddyfile is in `deploy/Caddyfile`.
 ## Environment Variables
 
 - `SQLITE_DB_PATH` (default: `./data/urlshortener.db`) — SQLite database path.
-- `TINYLNK_ADMIN_KEY` (default: auto-generated) — **required** management
-  secret.
+- `TINYLNK_ADMIN_KEY` has been removed — authentication is handled exclusively by Clerk JWT
 - `TINYLNK_CORS_ORIGINS` (default:
   `http://localhost:5173,http://localhost:8000`) — allowed origins.
 - `TINYLNK_REDIRECT_WARNING` (default: `false`) — show an external-redirect
@@ -162,7 +160,6 @@ pytest tests/ -v
 
 ## Security Checklist
 
-- [ ] `TINYLNK_ADMIN_KEY` is set to a strong random value
 - [ ] HTTPS is enabled (reverse proxy with Let's Encrypt)
 - [ ] `TINYLNK_CORS_ORIGINS` points only to your actual domain(s)
 - [ ] `LOG_FORMAT=json` is set for production
