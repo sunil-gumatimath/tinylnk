@@ -4,22 +4,36 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="tinylnk — a self-hosted URL shortener with click analytics, custom aliases, QR codes, and link management."
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <meta property="og:title" content="tinylnk — Lightning Fast URL Shortener" />
+    <meta
+      property="og:description"
+      content="Shorten links and keep the data: click analytics, custom aliases, QR codes, all on your own server."
+    />
+    <meta property="og:type" content="website" />
     <title>tinylnk — Lightning Fast URL Shortener</title>
+    <script>
+      // Apply the stored theme before first paint. Without this the stylesheet's
+      // light defaults paint first and dark-mode users see a white flash, and
+      // the browser chrome keeps the hardcoded dark theme-color in light mode.
+      (function () {
+        try {
+          var isDark = localStorage.getItem('tinylnk-theme') !== 'light';
+          document.documentElement.classList.toggle('dark', isDark);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', isDark ? '#0f172a' : '#f5efe4');
+        } catch (e) {
+          /* Private mode / blocked storage: keep the defaults. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
-<!-- TODO: Add PWA manifest and service worker -->
-
-<!-- TODO: Add SEO meta tags and Open Graph -->
-
-<!-- TODO: Add favicon variants for different devices -->
-
-<!-- TODO: Add lazy loading for images -->
-
-<!-- TODO: Add PWA manifest and service worker registration -->
-
-<!-- TODO: Add SEO meta tags and Open Graph properties -->

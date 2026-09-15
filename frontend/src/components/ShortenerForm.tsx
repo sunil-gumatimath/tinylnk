@@ -4,6 +4,7 @@ import {
 	Check,
 	ChevronDown,
 	ChevronUp,
+	ExternalLink,
 	ScanQrCode,
 	Sparkles,
 } from "lucide-react";
@@ -82,6 +83,7 @@ export function ShortenerForm({
 						>
 							<Input
 								size="large"
+								id="tinylnk-url-input"
 								placeholder="https://example.com/launch/landing-page"
 								prefix={<LinkIcon size={20} style={{ marginRight: "8px" }} />}
 							/>
@@ -150,7 +152,7 @@ export function ShortenerForm({
 								</Form.Item>
 								{showCustomExpiry ? (
 									<Form.Item
-										name="expires_in_hours"
+										name="custom_expires_in_hours"
 										label="Custom hours"
 										rules={[{ required: true, message: "Enter hours" }]}
 									>
@@ -209,6 +211,14 @@ export function ShortenerForm({
 									onClick={() => onShowQr(result.short_code)}
 								>
 									Show QR
+								</Button>
+								<Button
+									icon={<ExternalLink size={16} />}
+									href={getShortUrl(result)}
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									Open
 								</Button>
 							</div>
 						</div>

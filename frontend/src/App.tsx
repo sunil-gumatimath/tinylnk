@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth, SignInButton, UserButton } from "@clerk/react";
-import { LazyMotion, domAnimation, MotionConfig } from "framer-motion";
+import { SignInButton, UserButton } from "@clerk/react";
+import { CLERK_ENABLED, useAppAuth } from "./clerk";
+import { LazyMotion, MotionConfig, domAnimation, motion, AnimatePresence } from "framer-motion";
 import {
+	App as AntdApp,
 	Button,
 	Form,
 	Input,
@@ -9,10 +11,8 @@ import {
 	Select,
 	Spin,
 	Typography,
-	message,
 } from "antd";
-import { FolderOpen, RefreshCw, Search, Sun, Moon } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { FolderOpen, LogIn, RefreshCw, Search, Sun, Moon } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { Hero } from "./components/Hero";
 import { LinkCard } from "./components/LinkCard";
@@ -39,6 +39,9 @@ const cardVariants = {
 
 function App() {
 	const [form] = Form.useForm<ShortenFormValues>();
+	// Themed message API — the static `message.*` export cannot see the
+	// ConfigProvider theme and renders light toasts in dark mode.
+	const { message } = AntdApp.useApp();
 	const [loading, setLoading] = useState(false);
 	const [tableLoading, setTableLoading] = useState(false);
 	const [statsLoading, setStatsLoading] = useState(false);
@@ -49,9 +52,14 @@ function App() {
 	const [currentShortUrl, setCurrentShortUrl] = useState<string>("");
 	const [currentStats, setCurrentStats] = useState<UrlStats | null>(null);
 	const [qrModalVisible, setQrModalVisible] = useState(false);
-	const [currentQrUrl, setCurrentQrUrl] = useState<string | null>(null);
+	const [currentQrCode, setCurrentQrCode] = useState<string | null>(null);
 	const { isDark, toggleTheme } = useTheme();
-	const { isSignedIn, getToken } = useAuth();
+	const { isSignedIn, getToken } = useAppAuth();
+	// Clerk reports `undefined` until it finishes loading — treat that as
+	// "unknown" so the header doesn't flash the signed-out controls.
+	const authLoading = CLERK_ENABLED && isSignedIn === undefined;
+
+	const isAuthed = !authLoading && isSignedIn === true;
 
 	// New state for features
 	const [editModalVisible, setEditModalVisible] = useState(false);
@@ -60,6 +68,9 @@ function App() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterTag, setFilterTag] = useState<string | null>(null);
 	const [availableTags, setAvailableTags] = useState<string[]>([]);
+	// True once the first dashboard fetch settles — keeps the "No links
+	// yet" empty state from flashing before results arrive.
+	const [linksLoaded, setLinksLoaded] = useState(false);
 
 	const currentHost = window.location.origin;
 	const getShortUrl = useMemo(
@@ -69,12 +80,14 @@ function App() {
 		[currentHost],
 	);
 
-	/** Build Clerk-authenticated headers for admin-protected requests. */
+	/** Auth headers for admin-protected requests: Clerk JWT only. */
 	const authHeaders = async (): Promise<Record<string, string>> => {
 		const headers: Record<string, string> = {};
 		if (isSignedIn) {
 			const token = await getToken();
-			if (token) headers["Authorization"] = `Bearer ${token}`;
+			if (token) {
+				headers["Authorization"] = `Bearer ${token}`;
+			}
 		}
 		return headers;
 	};
@@ -99,7 +112,7 @@ function App() {
 		tag?: string | null,
 		signal?: AbortSignal,
 	) => {
-		if (!isSignedIn) return;
+		if (!isAuthed) return;
 
 		setTableLoading(true);
 		try {
@@ -128,6 +141,7 @@ function App() {
 			message.error("Could not load recent links.");
 		} finally {
 			setTableLoading(false);
+			setLinksLoaded(true);
 		}
 	};
 
@@ -177,15 +191,19 @@ function App() {
 		setResult(null);
 
 		try {
+			const hours =
+				values.expires_in_hours != null
+					? Number(values.expires_in_hours)
+					: values.custom_expires_in_hours != null
+						? Number(values.custom_expires_in_hours)
+						: null;
 			const response = await fetch("/api/shorten", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					url: values.url,
 					custom_alias: values.custom_alias?.trim() || null,
-					expires_in_hours: values.expires_in_hours
-						? Number(values.expires_in_hours)
-						: null,
+					expires_in_hours: hours,
 					max_clicks: values.max_clicks ? Number(values.max_clicks) : null,
 					tag: values.tag?.trim() || null,
 				}),
@@ -199,7 +217,7 @@ function App() {
 			setResult(data);
 			form.resetFields();
 			message.success("URL shortened successfully.");
-			if (isSignedIn) {
+			if (isAuthed) {
 				await fetchRecentLinks();
 			}
 		} catch (error: unknown) {
@@ -214,7 +232,7 @@ function App() {
 	};
 
 	const showStats = async (shortCode: string, shortUrl: string) => {
-		if (!isSignedIn) return;
+		if (!isAuthed) return;
 
 		setCurrentShortUrl(shortUrl);
 		setStatsModalVisible(true);
@@ -247,7 +265,7 @@ function App() {
 		startDate: string | null,
 		endDate: string | null,
 	) => {
-		if (!currentStats || !isSignedIn) return;
+		if (!currentStats || !isAuthed) return;
 
 		setStatsLoading(true);
 
@@ -270,7 +288,7 @@ function App() {
 	};
 
 	const handleDelete = async (shortCode: string) => {
-		if (!isSignedIn) return;
+		if (!isAuthed) return;
 
 		try {
 			const response = await fetch(`/api/urls/${shortCode}`, {
@@ -293,13 +311,13 @@ function App() {
 	};
 
 	const handleEdit = (record: ShortenedURL) => {
-		if (!isSignedIn) return;
+		if (!isAuthed) return;
 		setEditingRecord(record);
 		setEditModalVisible(true);
 	};
 
 	const handleEditSave = async (shortCode: string, data: EditFormValues) => {
-		if (!isSignedIn) return;
+		if (!isAuthed) return;
 		setEditLoading(true);
 
 		try {
@@ -311,8 +329,13 @@ function App() {
 				},
 				body: JSON.stringify({
 					original_url: data.original_url || null,
-					custom_alias: data.custom_alias?.trim() || null,
-					tag: data.tag?.trim() || null,
+					// "" clears the alias; the field is prefilled with the current
+					// alias, so a tag-only edit sends it back unchanged.
+					custom_alias: (data.custom_alias ?? "").trim(),
+					tag: (data.tag ?? "").trim(),
+					// null = leave unchanged; 0 on expiry/limit = clear it (backend).
+					expires_in_hours: data.expires_in_hours ?? null,
+					max_clicks: data.max_clicks ?? 0,
 				}),
 			});
 
@@ -336,9 +359,10 @@ function App() {
 	};
 
 	useEffect(() => {
-		if (!isSignedIn) {
+		if (!isAuthed) {
 			setRecentLinks([]);
 			setAvailableTags([]);
+			setLinksLoaded(false);
 			return;
 		}
 
@@ -352,7 +376,21 @@ function App() {
 			controller.abort();
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isSignedIn, searchQuery, filterTag]);
+	}, [isAuthed, searchQuery, filterTag]);
+
+	// Ctrl+K / Cmd+K focuses the URL input (Escape closes AntD modals natively).
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+				const target = e.target as HTMLElement | null;
+				if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+				e.preventDefault();
+				document.getElementById("tinylnk-url-input")?.focus();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
 
 	return (
 		<MotionConfig reducedMotion="user">
@@ -372,15 +410,17 @@ function App() {
 								>
 									{isDark ? <Sun size={18} /> : <Moon size={18} />}
 								</button>
-								{isSignedIn ? (
+								{authLoading ? (
+									<Spin size="small" />
+								) : isSignedIn ? (
 									<UserButton />
-								) : (
+								) : CLERK_ENABLED ? (
 									<SignInButton mode="modal">
 										<Button type="primary" ghost>
 											Sign In
 										</Button>
 									</SignInButton>
-								)}
+								) : null}
 							</nav>
 						</div>
 					</header>
@@ -400,13 +440,34 @@ function App() {
 								result={result}
 								onCopy={handleCopy}
 								onShowQr={(shortCode) => {
-									setCurrentQrUrl(shortCode);
+									setCurrentQrCode(shortCode);
 									setQrModalVisible(true);
 								}}
 								getShortUrl={getShortUrl}
 							/>
 
-							{isSignedIn && (
+							{/* Signed-out visitors can still shorten links, but the
+							    dashboard (search, cards, analytics) needs auth — say so
+							    instead of silently hiding it. */}
+							{!isAuthed && !authLoading && (
+								<motion.section
+									className="dashboard-section"
+									initial={{ opacity: 0, y: 30 }}
+									animate={{ opacity: 1, y: 0 }}
+									transition={{ delay: 0.3, duration: 0.5 }}
+								>
+									<div className="empty-state panel-surface">
+										<LogIn size={44} />
+										<Title level={4}>Sign in to manage your links</Title>
+										<Paragraph className="dashboard-subtitle">
+											Links you create above keep working. Sign in
+											to see click analytics, edit, and delete them.
+										</Paragraph>
+									</div>
+								</motion.section>
+							)}
+
+							{isAuthed && (
 								<motion.section
 									className="dashboard-section"
 									initial={{ opacity: 0, y: 30 }}
@@ -455,7 +516,7 @@ function App() {
 										)}
 									</motion.div>
 
-									{tableLoading ? (
+									{tableLoading || !linksLoaded ? (
 										<div className="table-loading">
 											<Spin size="large" />
 										</div>
@@ -486,7 +547,7 @@ function App() {
 															onDelete={handleDelete}
 															onEdit={handleEdit}
 															onShowQr={(shortCode) => {
-																setCurrentQrUrl(shortCode);
+																setCurrentQrCode(shortCode);
 																setQrModalVisible(true);
 															}}
 														/>
@@ -506,6 +567,7 @@ function App() {
 								loading={statsLoading}
 								onClose={() => setStatsModalVisible(false)}
 								onDateRangeChange={handleStatsDateChange}
+								getAuthHeaders={authHeaders}
 							/>
 							<EditModal
 								open={editModalVisible}
@@ -520,10 +582,10 @@ function App() {
 
 							<QrModal
 								open={qrModalVisible}
-								currentQrUrl={currentQrUrl}
+								shortCode={currentQrCode}
 								onClose={() => {
 									setQrModalVisible(false);
-									setCurrentQrUrl(null);
+									setCurrentQrCode(null);
 								}}
 							/>
 						</div>

@@ -1,6 +1,5 @@
-import { useAuth } from '@clerk/react';
 import { useState } from 'react';
-import { Button, DatePicker, Modal } from 'antd';
+import { App as AntdApp, Button, DatePicker, Modal } from 'antd';
 import { BarChart2, Calendar, Download, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { chartColors } from '../theme';
@@ -16,32 +15,46 @@ interface StatsModalProps {
   stats: UrlStats | null;
   onClose: () => void;
   onDateRangeChange?: (startDate: string | null, endDate: string | null) => void;
+  /** Auth headers for the CSV export (Clerk JWT). */
+  getAuthHeaders: () => Promise<Record<string, string>>;
 }
 
-export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange }: StatsModalProps) {
+export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange, getAuthHeaders }: StatsModalProps) {
+  const { message } = AntdApp.useApp();
   const [exporting, setExporting] = useState(false);
-  const { getToken } = useAuth();
+  // Kept locally so the CSV export covers exactly the range shown in the
+  // charts — the endpoint supports it, the UI just has to pass it along.
+  const [range, setRange] = useState<{ start: string | null; end: string | null }>({
+    start: null,
+    end: null,
+  });
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
-    if (!onDateRangeChange) return;
     if (!dates || !dates[0] || !dates[1]) {
-      onDateRangeChange(null, null);
+      setRange({ start: null, end: null });
+      onDateRangeChange?.(null, null);
       return;
     }
-    onDateRangeChange(
-      dates[0].startOf('day').toISOString(),
-      dates[1].endOf('day').toISOString(),
-    );
+    const start = dates[0].startOf('day').toISOString();
+    const end = dates[1].endOf('day').toISOString();
+    setRange({ start, end });
+    onDateRangeChange?.(start, end);
   };
 
   const handleExport = async () => {
     if (!stats) return;
     setExporting(true);
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/stats/${stats.short_code}/export`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      });
+      const params = new URLSearchParams();
+      if (range.start) params.set('start_date', range.start);
+      if (range.end) params.set('end_date', range.end);
+      const query = params.toString();
+      const response = await fetch(
+        `/api/stats/${stats.short_code}/export${query ? `?${query}` : ''}`,
+        {
+          headers: await getAuthHeaders(),
+        },
+      );
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -53,7 +66,7 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      console.error('Export failed');
+      message.error('Export failed. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -123,7 +136,9 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
             <section className="panel-surface chart-panel">
               <div className="chart-heading">
                 <h4>Clicks over time</h4>
-                <span>Daily trend</span>
+                {/* Days are bucketed by SQL date() in UTC, so label them as such
+                    instead of letting them look like local days. */}
+                <span>Daily trend · UTC</span>
               </div>
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
@@ -227,9 +242,17 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                       <Globe size={14} />
                       <span>{click.referrer || 'Direct traffic'}</span>
                     </div>
-                    <div className="activity-row">
+                    <div
+                      className="activity-row"
+                      title={click.user_agent || undefined}
+                    >
                       <Monitor size={14} />
-                      <span>{click.user_agent || 'Unknown device'}</span>
+                      {/* Parsed server-side; the raw UA string is only a
+                          hover-away tooltip. */}
+                      <span>
+                        {[click.browser, click.os].filter(Boolean).join(' · ') ||
+                          'Unknown device'}
+                      </span>
                     </div>
                   </article>
                 ))}

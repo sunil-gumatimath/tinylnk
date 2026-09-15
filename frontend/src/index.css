@@ -26,9 +26,13 @@
   --radius-lg: 24px;
   --radius-md: 18px;
   --badge-bg: rgba(255, 255, 255, 0.55);
-  --card-bg: rgba(255, 255, 255, 0.45);
   --activity-bg: rgba(255, 255, 255, 0.62);
   --solid-bg: #ffffff;
+  /* Translucent so the header's backdrop-filter actually blurs content
+     scrolling underneath it. */
+  --header-bg: rgba(245, 239, 228, 0.85);
+  /* Failed WCAG AA on the dark surface when hardcoded to the light value. */
+  --tag-warn-text: #b45309;
 }
 
 :root.dark {
@@ -54,9 +58,10 @@
   --tooltip-border: #475569;
   
   --badge-bg: rgba(30, 41, 59, 0.65);
-  --card-bg: rgba(30, 41, 59, 0.55);
   --activity-bg: rgba(30, 41, 59, 0.62);
   --solid-bg: #1e293b;
+  --header-bg: rgba(15, 23, 42, 0.85);
+  --tag-warn-text: #fb923c;
 }
 
 * {
@@ -103,7 +108,7 @@ a {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: var(--bg);
+  background: var(--header-bg);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(12px);
   padding: 0;
@@ -161,54 +166,6 @@ a {
   width: min(1180px, calc(100vw - 40px));
   margin: 0 auto;
   padding: 32px 0 72px;
-}
-
-.ambient-backdrop {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.ambient {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(80px);
-  opacity: 0.5;
-}
-
-.ambient-a {
-  width: 26rem;
-  height: 26rem;
-  top: -6rem;
-  left: -8rem;
-  background: rgba(59, 130, 246, 0.16);
-}
-
-.ambient-b {
-  width: 30rem;
-  height: 30rem;
-  right: -10rem;
-  top: 18%;
-  background: rgba(249, 115, 22, 0.18);
-}
-
-.ambient-c {
-  width: 22rem;
-  height: 22rem;
-  bottom: -6rem;
-  left: 40%;
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.grid-overlay {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.8), transparent 80%);
 }
 
 .panel-surface {
@@ -276,7 +233,6 @@ a {
   padding: 8px 0 0;
 }
 
-.hero-eyebrow,
 .section-kicker,
 .panel-label,
 .result-badge {
@@ -311,11 +267,9 @@ a {
   line-height: 1;
 }
 
-.hero-lede,
 .section-heading p,
 .section-heading .ant-typography.ant-typography-secondary,
-.section-heading .ant-typography + p,
-.section-heading-row p {
+.section-heading .ant-typography + p {
   margin: 16px 0 0;
   max-width: 42rem;
   color: var(--text-muted);
@@ -323,80 +277,16 @@ a {
   line-height: 1.75;
 }
 
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  margin-top: 28px;
-}
-
-.primary-cta,
 .primary-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 20px;
-  border: 0;
-  border-radius: 16px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-  color: #fff;
-  font-weight: 800;
   box-shadow: 0 16px 36px rgba(29, 78, 216, 0.22);
-  cursor: pointer;
 }
 
-.hero-supporting {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.hero-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 32px;
-}
-
-.metric-card {
-  padding: 16px;
-  border-radius: 20px;
-  border: 1px solid var(--line);
-  background: var(--card-bg);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.metric-value {
-  color: var(--heading);
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-
-.metric-label {
-  color: var(--text-muted);
-  font-size: 0.95rem;
-}
-
-.composer-section,
-.links-section {
+.composer-section {
   margin-top: 32px;
 }
 
 .section-heading {
   margin-bottom: 20px;
-}
-
-.section-heading-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: end;
 }
 
 .composer-layout {
@@ -406,7 +296,6 @@ a {
 }
 
 .composer-panel,
-.guidance-panel,
 .chart-panel,
 .donut-panel,
 .activity-panel,
@@ -478,15 +367,7 @@ a {
   margin-top: 16px;
 }
 
-.guidance-list {
-  margin: 0;
-  padding-left: 16px;
-  color: var(--text-muted);
-  line-height: 1.8;
-}
-
-.result-panel,
-.result-placeholder {
+.result-panel {
   margin-top: 20px;
   padding: 20px;
   border-radius: 22px;
@@ -673,7 +554,7 @@ a {
 
 .subtle-tag.ant-tag {
   background: rgba(249, 115, 22, 0.12);
-  color: #b45309;
+  color: var(--tag-warn-text);
 }
 
 .empty-state {
@@ -831,25 +712,24 @@ a {
   box-shadow: none;
 }
 
-.ant-input-affix-wrapper,
-.ant-input-number {
-  border-radius: 16px;
-}
-
 .ant-btn-default {
-  background: var(--solid-bg);
+  background: var(--surface-strong);
   border-color: var(--line);
   color: var(--text);
 }
 
-.ant-btn-primary {
+/* Gradient fill for *solid* primary buttons only. Excluding ghost/danger/
+   disabled keeps AntD's own variants working: a `ghost` primary stays
+   transparent, a `danger` confirm stays red, and disabled buttons stay muted
+   instead of looking enabled. */
+.ant-btn-primary:not(.ant-btn-background-ghost):not(.ant-btn-dangerous):not(.ant-btn-disabled):not(:disabled) {
   background: linear-gradient(135deg, var(--primary), var(--primary-strong)) !important;
   border-color: transparent !important;
 }
 
 .ant-popconfirm-inner,
 .ant-popover-inner {
-  border-radius: 18px !important;
+  border-radius: 16px !important;
 }
 
 @media (max-width: 1080px) {
@@ -861,11 +741,6 @@ a {
 
   .links-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .section-heading-row {
-    align-items: start;
-    flex-direction: column;
   }
 }
 
@@ -883,7 +758,6 @@ a {
     font-size: clamp(2.6rem, 14vw, 4.2rem);
   }
 
-  .hero-metrics,
   .advanced-grid,
   .stats-kpis,
   .links-grid {
@@ -920,12 +794,6 @@ a {
 
 .search-input {
   flex: 1;
-}
-
-.search-toolbar .ant-select-selector {
-  border-radius: 14px !important;
-  height: 48px !important;
-  align-items: center;
 }
 
 /* ─── QR Customizer ──────────────────────────────── */
@@ -984,10 +852,6 @@ a {
   gap: 12px;
   align-items: center;
   justify-content: flex-end;
-}
-
-.stats-toolbar .ant-picker {
-  border-radius: 14px;
 }
 
 /* ─── Edit Form ──────────────────────────────────── */

@@ -4,7 +4,8 @@ import { QrCode } from 'lucide-react';
 
 interface QrModalProps {
   open: boolean;
-  currentQrUrl: string | null;
+  /** Short code (or custom alias) of the link to render — not a URL. */
+  shortCode: string | null;
   onClose: () => void;
 }
 
@@ -26,15 +27,26 @@ const BG_COLORS = [
   { label: 'Black', value: '000000' },
 ];
 
-export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
-  const [fgColor, setFgColor] = useState('black');
-  const [bgColor, setBgColor] = useState('white');
+const DEFAULT_PALETTE = { fg: 'black', bg: 'white' } as const;
 
-  // Build URL with color params for /api/qr/{short_code}
-  const cleanCode = currentQrUrl ? currentQrUrl.replace(/^\/api\/qr\//, '').replace(/^\//, '') : null;
-  const qrSrc = cleanCode
-    ? `/api/qr/${encodeURIComponent(cleanCode)}?fg=${fgColor}&bg=${bgColor}`
+export function QrModal({ open, shortCode, onClose }: QrModalProps) {
+  // The palette belongs to one link: opening a different one falls back to the
+  // defaults for it (derived during render — no reset effect needed), so
+  // colours never leak from the previous QR code.
+  const [selection, setSelection] = useState<{ code: string | null; fg: string; bg: string }>({
+    code: null,
+    ...DEFAULT_PALETTE,
+  });
+  const active =
+    selection.code === shortCode ? selection : { code: shortCode, ...DEFAULT_PALETTE };
+
+  const setFgColor = (fg: string) => setSelection({ code: shortCode, fg, bg: active.bg });
+  const setBgColor = (bg: string) => setSelection({ code: shortCode, fg: active.fg, bg });
+
+  const qrSrc = shortCode
+    ? `/api/qr/${encodeURIComponent(shortCode)}?fg=${active.fg}&bg=${active.bg}`
     : null;
+  const downloadName = `tinylnk-qr-${shortCode || 'code'}.png`;
 
   const handleDownload = async () => {
     if (!qrSrc) return;
@@ -44,7 +56,7 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
       const blobUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = blobUrl;
-      anchor.download = `tinylnk-qr-${cleanCode || 'code'}.png`;
+      anchor.download = downloadName;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -52,7 +64,7 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
     } catch {
       const anchor = document.createElement('a');
       anchor.href = qrSrc;
-      anchor.download = `tinylnk-qr-${cleanCode || 'code'}.png`;
+      anchor.download = downloadName;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -91,7 +103,7 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
               <button
                 key={c.value}
                 type="button"
-                className={`qr-swatch ${fgColor === c.value ? 'active' : ''}`}
+                className={`qr-swatch ${active.fg === c.value ? 'active' : ''}`}
                 style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
                 onClick={() => setFgColor(c.value)}
                 title={c.label}
@@ -106,7 +118,7 @@ export function QrModal({ open, currentQrUrl, onClose }: QrModalProps) {
               <button
                 key={c.value}
                 type="button"
-                className={`qr-swatch ${bgColor === c.value ? 'active' : ''}`}
+                className={`qr-swatch ${active.bg === c.value ? 'active' : ''}`}
                 style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
                 onClick={() => setBgColor(c.value)}
                 title={c.label}

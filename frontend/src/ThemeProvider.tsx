@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ConfigProvider } from 'antd';
+import { App as AntdApp, ConfigProvider } from 'antd';
 import { getAppTheme } from './theme';
 
 type ThemeContextType = {
@@ -9,6 +9,9 @@ type ThemeContextType = {
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+/** Keeps the browser chrome (mobile URL bar) in step with the app theme. */
+const THEME_COLOR = { dark: '#0f172a', light: '#f5efe4' };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(() => {
@@ -28,6 +31,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       document.documentElement.classList.remove('dark');
     }
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', isDark ? THEME_COLOR.dark : THEME_COLOR.light);
   }, [isDark]);
 
   const toggleTheme = () => setIsDark(!isDark);
@@ -35,7 +41,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{ isDark, toggleTheme }}>
       <ConfigProvider theme={getAppTheme(isDark)}>
-        {children}
+        {/* AntD's App supplies the themed context that static `message.*`
+            calls cannot see (they use the default light algorithm), so toasts
+            match the active theme. `component={false}` adds no wrapper DOM. */}
+        <AntdApp component={false}>{children}</AntdApp>
       </ConfigProvider>
     </ThemeContext.Provider>
   );

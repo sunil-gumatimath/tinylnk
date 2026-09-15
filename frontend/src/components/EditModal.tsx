@@ -26,9 +26,10 @@ export function EditModal({ open, loading, record, onSave, onClose }: EditModalP
     if (record && open) {
       form.setFieldsValue({
         original_url: record.original_url,
-        // Prefill the editable custom alias; fall back to the random short
-        // code only when no alias exists yet (it stays editable either way).
-        custom_alias: record.custom_alias || record.short_code || '',
+        // Backend responses now carry the alias separately from short_code
+        // (which always holds a value), so the field can actually prefill —
+        // and clearing it removes the alias.
+        custom_alias: record.custom_alias ?? '',
         tag: record.tag ?? '',
         expires_in_hours: null,
         max_clicks: record.max_clicks,
@@ -75,7 +76,11 @@ export function EditModal({ open, loading, record, onSave, onClose }: EditModalP
           <Input placeholder="https://example.com/..." />
         </Form.Item>
 
-        <Form.Item name="custom_alias" label="Custom alias">
+        <Form.Item
+          name="custom_alias"
+          label="Custom alias"
+          tooltip="Leave empty to remove the alias and fall back to the short code."
+        >
           <Input placeholder="my-link" />
         </Form.Item>
 
@@ -84,14 +89,18 @@ export function EditModal({ open, loading, record, onSave, onClose }: EditModalP
             <Input placeholder="marketing" />
           </Form.Item>
 
-          <Form.Item name="max_clicks" label="Max clicks">
-            <InputNumber style={{ width: '100%' }} min={1} placeholder="Unlimited" />
+          <Form.Item
+            name="max_clicks"
+            label="Max clicks"
+            tooltip="Leave empty (or 0) to remove the click limit."
+          >
+            <InputNumber style={{ width: '100%' }} min={0} placeholder="Unlimited" />
           </Form.Item>
 
           <Form.Item
             name="expires_in_hours"
             label="Reset expiry (hours from now)"
-            tooltip="Leave empty to keep current expiry. Set 0 to remove expiry."
+            tooltip="Leave empty to keep the current expiry. Set 0 to remove expiry."
           >
             <InputNumber style={{ width: '100%' }} min={0} max={8760} placeholder="No change" />
           </Form.Item>

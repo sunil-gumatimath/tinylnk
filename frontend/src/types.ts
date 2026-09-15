@@ -16,6 +16,9 @@ export interface ClickEvent {
   clicked_at: string;
   referrer: string | null;
   user_agent: string | null;
+  /** Parsed from `user_agent` server-side; "Unknown" when there is no UA. */
+  browser?: string | null;
+  os?: string | null;
 }
 
 export interface StatsItem {
@@ -30,6 +33,8 @@ export interface UrlStats {
   expires_at: string | null;
   max_clicks: number | null;
   tag: string | null;
+  /** Custom alias on its own, or null when the link uses a generated code. */
+  custom_alias?: string | null;
   total_clicks: number;
   clicks_by_date: StatsItem[];
   browser_stats: StatsItem[];
@@ -42,6 +47,9 @@ export interface ShortenFormValues {
   url: string;
   custom_alias?: string;
   expires_in_hours?: number;
+  /** Hours typed into the "Custom..." expiry box (kept separate so the
+  preset Select and the custom input never share one AntD field name). */
+  custom_expires_in_hours?: number;
   max_clicks?: number;
   tag?: string;
 }

@@ -37,20 +37,53 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
         </div>
 
         <div className="link-actions">
-          <Button onClick={() => handleCopyClick()} icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />} title="Copy link" />
-          <Button onClick={() => onShowQr(record.short_code)} icon={<QrCode size={15} />} title="QR code" />
-          <Button onClick={() => onShowStats(record.short_code, getShortUrl(record))} icon={<BarChart2 size={15} />} title="Analytics" />
-          <Button onClick={() => onEdit(record)} icon={<Pencil size={15} />} title="Edit" />
-          <Button onClick={() => onShare(getShortUrl(record))} icon={<Share2 size={15} />} title="Share" />
+          <Button
+            onClick={() => handleCopyClick()}
+            icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />}
+            title="Copy link"
+            aria-label="Copy link"
+          />
+          <Button
+            onClick={() => onShowQr(record.short_code)}
+            icon={<QrCode size={15} />}
+            title="QR code"
+            aria-label="Show QR code"
+          />
+          <Button
+            onClick={() => onShowStats(record.short_code, getShortUrl(record))}
+            icon={<BarChart2 size={15} />}
+            title="Analytics"
+            aria-label="View analytics"
+          />
+          <Button
+            onClick={() => onEdit(record)}
+            icon={<Pencil size={15} />}
+            title="Edit"
+            aria-label="Edit link"
+          />
+          <Button
+            onClick={() => onShare(getShortUrl(record))}
+            icon={<Share2 size={15} />}
+            title="Share"
+            aria-label="Share link"
+          />
           <Popconfirm
             title="Delete this link?"
             description="This also removes its analytics history."
             okText="Delete"
+            // The trigger is already a red/danger button — the confirm must be
+            // destructive too instead of AntD's default blue primary.
+            okButtonProps={{ danger: true }}
             cancelText="Cancel"
             placement="topRight"
             onConfirm={() => onDelete(record.short_code)}
           >
-            <Button danger icon={<Trash2 size={15} />} title="Delete" />
+            <Button
+              danger
+              icon={<Trash2 size={15} />}
+              title="Delete"
+              aria-label="Delete link"
+            />
           </Popconfirm>
         </div>
       </div>

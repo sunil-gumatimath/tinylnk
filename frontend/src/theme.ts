@@ -16,7 +16,14 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
     colorBgContainer: isDark ? '#1e293b' : '#fffaf2',
     colorBgElevated: isDark ? '#1e293b' : '#fffdf8',
     colorBorder: isDark ? '#334155' : '#d8cfc0',
-    borderRadius: 18,
+    // One control-height scale for every form control (Input, Select, Picker,
+    // InputNumber, Button) so neighbours in a toolbar line up. Per-component
+    // controlHeight overrides (Button 46, Input 48, Select/Picker falling back
+    // to AntD's 32) used to leave mismatched heights side by side.
+    controlHeight: 44,
+    controlHeightLG: 48,
+    controlHeightSM: 32,
+    borderRadius: 14,
     fontFamily: "'Manrope', 'Segoe UI', sans-serif",
     fontSize: 15,
   },
@@ -28,21 +35,11 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
       siderBg: 'transparent',
     },
     Button: {
-      controlHeight: 46,
-      borderRadius: 14,
       fontWeight: 700,
     },
     Input: {
-      controlHeight: 48,
       activeBorderColor: '#1d4ed8',
       hoverBorderColor: '#3b82f6',
-      colorBgContainer: isDark ? '#1e293b' : '#fffdf8',
-      colorBorder: isDark ? '#334155' : '#d8cfc0',
-    },
-    InputNumber: {
-      controlHeight: 48,
-      colorBgContainer: isDark ? '#1e293b' : '#fffdf8',
-      colorBorder: isDark ? '#334155' : '#d8cfc0',
     },
     Modal: {
       borderRadiusLG: 24,
@@ -50,7 +47,7 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
       headerBg: 'transparent',
     },
     Popconfirm: {
-      borderRadiusLG: 18,
+      borderRadiusLG: 16,
     },
     Form: {
       labelColor: isDark ? '#94a3b8' : '#5b6475',
