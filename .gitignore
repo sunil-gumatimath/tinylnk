@@ -41,6 +41,9 @@ Thumbs.db
 *~
 ~
 
+# Local runtime artifacts (dev server logs / pids)
+.run/
+
 # Frontend Logs
 npm-debug.log*
 yarn-debug.log*
