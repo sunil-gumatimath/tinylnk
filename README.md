@@ -21,6 +21,7 @@ tinylnk converts long URLs into short, shareable links with detailed click analy
 - **Click Limits** — Cap the maximum number of clicks per link
 - **Tagging** — Organize links with custom tags for easy categorization
 - **Dark/Light Theme** — Toggle between themes with persistent preference
+- **Optional Clerk Sign-in** — With a Clerk key configured, the dashboard is gated behind sign-in: anyone can still shorten a link, but editing, deleting, and analytics require an authenticated session
 
 ### Analytics
 
@@ -67,6 +68,11 @@ docker-compose up -d
 ```
 
 Visit `http://localhost:8000` in your browser.
+
+To enable sign-in, copy `.env.example` to `.env` and set
+`VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_ISSUER`, then rebuild with
+`docker-compose up -d --build` — the publishable key is baked into the frontend
+bundle at build time. See [Configuration](#configuration).
 
 ### Manual Setup
 
@@ -202,15 +208,20 @@ Copy `.env.example` to `.env` and customise:
 | `LOG_LEVEL` | `INFO` | Logging threshold: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
 | `LOG_FORMAT` | `text` | Set to `json` for structured logs |
 | `SENTRY_DSN` | *(empty)* | Optional Sentry error-tracking DSN |
-| `CLERK_PUBLISHABLE_KEY` | *(empty)* | Clerk publishable (a.k.a. "anonymous") key for the frontend. When set, enables Clerk JWT verification on management endpoints. |
-| `CLERK_SECRET_KEY` | *(empty)* | Clerk secret key, used by the backend to verify inbound JWTs. Required when `CLERK_PUBLISHABLE_KEY` is set. |
-| `CLERK_ISSUER` | *(empty)* | Expected `iss` claim value in incoming Clerk JWTs; the backend only accepts tokens whose issuer matches. Required when Clerk auth is enabled. |
+| `VITE_CLERK_PUBLISHABLE_KEY` | *(empty)* | Clerk publishable key for the browser. Vite **inlines** it at build time, so the frontend must be rebuilt after changing it. When unset, the sign-in UI is hidden (shortening still works). |
+| `CLERK_ISSUER` | *(empty)* | Expected `iss` claim of incoming Clerk JWTs. The backend fetches signing keys from `<CLERK_ISSUER>/.well-known/jwks.json`. |
+| `CLERK_PUBLISHABLE_KEY` | *(empty)* | Optional backend fallback: the issuer is derived from this key when `CLERK_ISSUER` is unset. |
+
+> `CLERK_SECRET_KEY` is **not** used by tinylnk — tokens are verified against
+> Clerk's public JWKS, so no secret key is required.
 
 #### Authentication Flow
 
-Authentication on management endpoints uses **Clerk JWT** exclusively. Send `Authorization: Bearer <token>` on all protected endpoints. The token is verified against `CLERK_SECRET_KEY` and its `iss` claim must equal `CLERK_ISSUER`. This requires all three Clerk variables to be configured.
+Authentication on management endpoints uses **Clerk JWT** exclusively. Send `Authorization: Bearer <token>` on all protected endpoints. The backend derives the expected issuer from `CLERK_ISSUER` (falling back to `CLERK_PUBLISHABLE_KEY`) and verifies the signature against Clerk's public JWKS; the token's `iss` claim must match. No secret key is involved.
 
-If the token is invalid or absent, the request is rejected with `401 Unauthorized`. Use Clerk when you have end users or a browser frontend that can obtain a session token.
+The browser gets its publishable key from `VITE_CLERK_PUBLISHABLE_KEY`, which Vite inlines at **build time** (`bun run build`, or `docker-compose up -d --build`). Changing it therefore requires a rebuild. With it unset, the app still runs, but the sign-in UI is hidden and the management endpoints are reachable only programmatically with a JWT.
+
+If the token is invalid or absent, the request is rejected with `401 Unauthorized`.
 
 ## Project Structure
 
@@ -219,29 +230,31 @@ tinylnk/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py          # FastAPI application & routes
-│   │   ├── models.py        # SQLAlchemy database models
+│   │   ├── auth.py          # Clerk JWT verification against public JWKS
+│   │   ├── models.py        # SQLAlchemy models + schema versioning
 │   │   ├── schemas.py       # Pydantic request/response schemas
 │   │   ├── crud.py          # Database CRUD operations
-│   │   ├── database.py      # Database connection & session
+│   │   ├── database.py      # Engine, WAL pragmas & session
+│   │   ├── logging_config.py # Structured logging middleware
 │   │   └── utils.py         # URL validation & IP anonymization
+│   ├── tests/               # Pytest suite
+│   ├── config/              # Backend configuration
 │   ├── requirements.txt     # Python dependencies
 │   └── __init__.py
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx          # Main application component
 │   │   ├── main.tsx         # React entry point
+│   │   ├── clerk.ts         # Optional Clerk auth wrapper
 │   │   ├── types.ts         # TypeScript interfaces
 │   │   ├── theme.ts         # Ant Design theme config
 │   │   ├── ThemeProvider.tsx # Theme context provider
-│   │   └── components/
-│   │       ├── Hero.tsx         # Landing hero with animations
-│   │       ├── ShortenerForm.tsx # URL creation form
-│   │       ├── LinkCard.tsx     # Individual link display
-│   │       ├── EditModal.tsx    # Link editing modal
-│   │       ├── StatsModal.tsx   # Analytics with charts, export, date filter
-│   │       └── QrModal.tsx      # QR code with color customization
+│   │   └── components/      # Hero, ShortenerForm, LinkCard, EditModal,
+│   │                        # StatsModal, QrModal, ClerkShell, LinkIcon
 │   ├── package.json
 │   └── vite.config.ts
+├── scripts/                 # Backup/restore + end-to-end contract check
+├── deploy/                  # Deployment notes and Caddyfile
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
@@ -253,7 +266,7 @@ tinylnk/
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
 - **Database** — Single SQLite file with WAL mode and a 5s busy-timeout, so readers never block on writes. It is still a **single-writer** store: fine for personal and small-team use, not for high-concurrency workloads (which would need Postgres). A `schema_version` row is stamped at startup so stale database files fail loudly.
 - **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics are stored locally; tinylnk does not include third-party tracking.
-- **Rate Limiting** — SlowAPI limits sensitive endpoints, including shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), deletion (20/min), and QR generation (30/min).
+- **Rate Limiting** — SlowAPI limits sensitive endpoints: shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), tag listing (60/min), CSV export (30/min), redirects (60/min), deletion (20/min), and QR generation (30/min).
 
 ## Backups
 
@@ -310,7 +323,7 @@ Restore with `scripts/restore.sh <backup-file>` (stops writers first — see the
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+K` / `⌘+K` | Focus the URL input and scroll to form |
+| `Ctrl+K` / `⌘+K` | Focus the URL input |
 | `Escape` | Close any open modal |
 
 ## License
