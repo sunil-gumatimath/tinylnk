@@ -6,7 +6,6 @@ export) require a valid Clerk JWT on the ``Authorization: Bearer`` header —
 the ``auth_headers`` fixture (conftest) mints one against an offline JWKS stub.
 """
 
-
 import jwt
 import pytest
 from conftest import (
@@ -26,12 +25,12 @@ class TestPublicEndpoints:
     def test_shorten_does_not_require_auth(self, client: TestClient):
         """POST /api/shorten works without any auth header."""
         response = client.post(
-            "/api/shorten", json={"url": "https://example.com/public"},
+            "/api/shorten",
+            json={"url": "https://example.com/public"},
         )
         assert response.status_code == 200
 
-    def test_redirect_does_not_require_auth(self, client: TestClient,
-                                            sample_url: str):
+    def test_redirect_does_not_require_auth(self, client: TestClient, sample_url: str):
         """GET /{code} works without any auth header."""
         response = client.get(f"/{sample_url}", follow_redirects=False)
         assert response.status_code == 302
@@ -41,8 +40,7 @@ class TestPublicEndpoints:
         response = client.get("/api/health")
         assert response.status_code == 200
 
-    def test_qr_does_not_require_auth(self, client: TestClient,
-                                      sample_url: str):
+    def test_qr_does_not_require_auth(self, client: TestClient, sample_url: str):
         """GET /api/qr/{code} works without any auth header."""
         response = client.get(f"/api/qr/{sample_url}")
         assert response.status_code == 200
@@ -82,28 +80,25 @@ class TestProtectedEndpointsWithoutKey:
 class TestProtectedEndpointsWithClerkToken:
     """Protected endpoints work with a valid Clerk Bearer token."""
 
-    def test_recent_with_valid_token_returns_200(self, client: TestClient,
-                                                 auth_headers: dict):
+    def test_recent_with_valid_token_returns_200(self, client: TestClient, auth_headers: dict):
         response = client.get("/api/recent", headers=auth_headers)
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    def test_stats_with_valid_token_returns_200(self, client: TestClient,
-                                                auth_headers: dict,
-                                                sample_url: str):
+    def test_stats_with_valid_token_returns_200(
+        self, client: TestClient, auth_headers: dict, sample_url: str
+    ):
         response = client.get(f"/api/stats/{sample_url}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "original_url" in data
         assert data["short_code"] == sample_url
 
-    def test_tags_with_valid_token_returns_200(self, client: TestClient,
-                                               auth_headers: dict):
+    def test_tags_with_valid_token_returns_200(self, client: TestClient, auth_headers: dict):
         response = client.get("/api/tags", headers=auth_headers)
         assert response.status_code == 200
 
-    def test_delete_with_valid_token(self, client: TestClient,
-                                     auth_headers: dict):
+    def test_delete_with_valid_token(self, client: TestClient, auth_headers: dict):
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-delete"},
@@ -112,8 +107,7 @@ class TestProtectedEndpointsWithClerkToken:
         response = client.delete(f"/api/urls/{code}", headers=auth_headers)
         assert response.status_code == 204
 
-    def test_update_with_valid_token(self, client: TestClient,
-                                     auth_headers: dict):
+    def test_update_with_valid_token(self, client: TestClient, auth_headers: dict):
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-update"},
@@ -127,8 +121,7 @@ class TestProtectedEndpointsWithClerkToken:
         assert response.status_code == 200
         assert response.json()["tag"] == "updated"
 
-    def test_stats_export(self, client: TestClient, auth_headers: dict,
-                          sample_url: str):
+    def test_stats_export(self, client: TestClient, auth_headers: dict, sample_url: str):
         """Export returns CSV with correct content type."""
         # Record a click first so there's data to export
         client.get(f"/{sample_url}", follow_redirects=False)
@@ -145,7 +138,8 @@ class TestInvalidCredentials:
     Clerk Bearer token — including the ``X-Admin-Key`` header."""
 
     def test_all_protected_endpoints_reject_garbage_token(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ):
         """All protected endpoints reject a bogus Bearer token with 401."""
         endpoints = [
@@ -171,14 +165,16 @@ class TestInvalidCredentials:
     def test_admin_key_header_is_no_longer_accepted(self, client: TestClient):
         """``X-Admin-Key`` was removed — it must never authenticate."""
         response = client.get(
-            "/api/recent", headers={"X-Admin-Key": "any-key-at-all"},
+            "/api/recent",
+            headers={"X-Admin-Key": "any-key-at-all"},
         )
         assert response.status_code == 401
 
     def test_malformed_authorization_header_rejected(self, client: TestClient):
         for header in ("Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "token123"):
             response = client.get(
-                "/api/recent", headers={"Authorization": header},
+                "/api/recent",
+                headers={"Authorization": header},
             )
             assert response.status_code == 401, f"header={header!r}"
 
@@ -188,7 +184,8 @@ class TestInvalidCredentials:
         monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
         expired = _rs256_token(private_key, exp_offset=-300)
         response = client.get(
-            "/api/recent", headers={"Authorization": f"Bearer {expired}"},
+            "/api/recent",
+            headers={"Authorization": f"Bearer {expired}"},
         )
         assert response.status_code == 401
 
@@ -198,7 +195,8 @@ class TestInvalidCredentials:
         monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
         forged = _rs256_token(private_key, iss="https://attacker.example")
         response = client.get(
-            "/api/recent", headers={"Authorization": f"Bearer {forged}"},
+            "/api/recent",
+            headers={"Authorization": f"Bearer {forged}"},
         )
         assert response.status_code == 401
 
@@ -272,7 +270,9 @@ class TestClerkTokenVerification:
         _, public_key = _rsa_keypair()
         self._stub_jwks(monkeypatch, public_key)
         hs256_token = jwt.encode(
-            {"sub": "user_1"}, "hmac-test-secret-0123456789abcdef", algorithm="HS256",
+            {"sub": "user_1"},
+            "hmac-test-secret-0123456789abcdef",
+            algorithm="HS256",
         )
         assert auth.verify_clerk_token(hs256_token) is None
 
@@ -284,7 +284,8 @@ class TestClerkTokenVerification:
         assert auth.verify_clerk_token(expired) is None
 
     def test_verify_accepts_valid_rs256_token_with_matching_issuer(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         """Happy path: correct signature, fresh exp, matching iss claim."""
         private_key, public_key = _rsa_keypair()
@@ -319,6 +320,8 @@ class TestClerkTokenVerification:
         monkeypatch.setenv("CLERK_ISSUER", CLERK_TEST_ISSUER)
         monkeypatch.setattr(auth, "PyJWKClient", _ExplodingJWKClient)
         token = jwt.encode(
-            {"sub": "user_1"}, "hmac-test-secret-0123456789abcdef", algorithm="HS256",
+            {"sub": "user_1"},
+            "hmac-test-secret-0123456789abcdef",
+            algorithm="HS256",
         )
         assert auth.verify_clerk_token(token) is None

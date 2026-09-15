@@ -57,9 +57,7 @@ def db_session():
     )
     Base.metadata.create_all(bind=engine)
 
-    TestSessionLocal = sessionmaker(
-        autocommit=False, autoflush=False, bind=engine
-    )
+    TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session: Session = TestSessionLocal()
     try:
         yield session
@@ -105,13 +103,15 @@ class _StubJWKClient:
 def _rsa_keypair():
     """Generate a throwaway RSA key pair for offline JWT signing."""
     private_key = rsa.generate_private_key(
-        public_exponent=65537, key_size=2048,
+        public_exponent=65537,
+        key_size=2048,
     )
     return private_key, private_key.public_key()
 
 
-def _rs256_token(private_key, *, iss=CLERK_TEST_ISSUER, include_iss=True,
-                 exp_offset=300, sub="user_test_123"):
+def _rs256_token(
+    private_key, *, iss=CLERK_TEST_ISSUER, include_iss=True, exp_offset=300, sub="user_test_123"
+):
     """Build a properly signed RS256 token resembling a Clerk session JWT."""
     now = int(time.time())
     claims: dict = {"sub": sub, "iat": now, "exp": now + exp_offset}
@@ -138,6 +138,7 @@ def auth_headers(monkeypatch):
 def clear_caches():
     """Clear module-level QR cache between tests."""
     from app.main import _qr_cache as qr_cache
+
     qr_cache.clear()
     yield
 
