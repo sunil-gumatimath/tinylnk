@@ -2,15 +2,19 @@
 
 Public endpoints (create short URL, redirect, QR, health) should work without
 any credentials.  Protected endpoints (recent, stats, update, delete, tags,
-export) accept either a Clerk JWT or the ``X-Admin-Key`` header checked
-against ``TINYLNK_ADMIN_KEY`` (set by conftest for the test run).
+export) require a valid Clerk JWT on the ``Authorization: Bearer`` header —
+the ``auth_headers`` fixture (conftest) mints one against an offline JWKS stub.
 """
 
-import time
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from conftest import (
+    CLERK_TEST_ISSUER,
+    _rs256_token,
+    _rsa_keypair,
+    _StubJWKClient,
+)
 from fastapi.testclient import TestClient
 
 from app import auth
@@ -75,54 +79,41 @@ class TestProtectedEndpointsWithoutKey:
         assert response.status_code == 401
 
 
-class TestProtectedEndpointsWithKey:
-    """Protected endpoints work when a valid admin key is provided
-    (``X-Admin-Key`` fallback — key set by conftest)."""
+class TestProtectedEndpointsWithClerkToken:
+    """Protected endpoints work with a valid Clerk Bearer token."""
 
-    def test_recent_with_valid_key_returns_200(self, client: TestClient,
-                                                admin_key: str):
-        response = client.get(
-            "/api/recent",
-            headers={"X-Admin-Key": admin_key},
-        )
+    def test_recent_with_valid_token_returns_200(self, client: TestClient,
+                                                 auth_headers: dict):
+        response = client.get("/api/recent", headers=auth_headers)
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    def test_stats_with_valid_key_returns_200(self, client: TestClient,
-                                              admin_key: str,
-                                              sample_url: str):
-        response = client.get(
-            f"/api/stats/{sample_url}",
-            headers={"X-Admin-Key": admin_key},
-        )
+    def test_stats_with_valid_token_returns_200(self, client: TestClient,
+                                                auth_headers: dict,
+                                                sample_url: str):
+        response = client.get(f"/api/stats/{sample_url}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "original_url" in data
         assert data["short_code"] == sample_url
 
-    def test_tags_with_valid_key_returns_200(self, client: TestClient,
-                                              admin_key: str):
-        response = client.get(
-            "/api/tags",
-            headers={"X-Admin-Key": admin_key},
-        )
+    def test_tags_with_valid_token_returns_200(self, client: TestClient,
+                                               auth_headers: dict):
+        response = client.get("/api/tags", headers=auth_headers)
         assert response.status_code == 200
 
-    def test_delete_with_valid_key(self, client: TestClient,
-                                    admin_key: str):
+    def test_delete_with_valid_token(self, client: TestClient,
+                                     auth_headers: dict):
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-delete"},
         )
         code = url.json()["short_code"]
-        response = client.delete(
-            f"/api/urls/{code}",
-            headers={"X-Admin-Key": admin_key},
-        )
+        response = client.delete(f"/api/urls/{code}", headers=auth_headers)
         assert response.status_code == 204
 
-    def test_update_with_valid_key(self, client: TestClient,
-                                    admin_key: str):
+    def test_update_with_valid_token(self, client: TestClient,
+                                     auth_headers: dict):
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-update"},
@@ -131,29 +122,32 @@ class TestProtectedEndpointsWithKey:
         response = client.put(
             f"/api/urls/{code}",
             json={"tag": "updated"},
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         assert response.json()["tag"] == "updated"
 
-    def test_stats_export(self, client: TestClient, admin_key: str,
-                           sample_url: str):
+    def test_stats_export(self, client: TestClient, auth_headers: dict,
+                          sample_url: str):
         """Export returns CSV with correct content type."""
         # Record a click first so there's data to export
         client.get(f"/{sample_url}", follow_redirects=False)
         response = client.get(
             f"/api/stats/{sample_url}/export",
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
 
 
-class TestInvalidKey:
-    """Every protected endpoint must reject an invalid admin key."""
+class TestInvalidCredentials:
+    """Every protected endpoint must reject anything that is not a valid
+    Clerk Bearer token — including the ``X-Admin-Key`` header."""
 
-    def test_all_protected_endpoints_reject_invalid_key(self, client: TestClient):
-        """All protected endpoints reject a wrong admin key with 401."""
+    def test_all_protected_endpoints_reject_garbage_token(
+        self, client: TestClient,
+    ):
+        """All protected endpoints reject a bogus Bearer token with 401."""
         endpoints = [
             ("/api/recent", "get"),
             ("/api/stats/somecode", "get"),
@@ -165,34 +159,68 @@ class TestInvalidKey:
         for entry in endpoints:
             path, method = entry[0], entry[1]
             body = entry[2] if len(entry) > 2 else None
-            kwargs = {"headers": {"X-Admin-Key": "wrong-key"}}
+            kwargs = {"headers": {"Authorization": "Bearer not-a-real-token"}}
             if body:
                 kwargs["json"] = body
             response = getattr(client, method)(path, **kwargs)
             assert response.status_code == 401, (
-                f"{method.upper()} {path} with key='wrong-key' expected 401,"
+                f"{method.upper()} {path} with a bogus token expected 401,"
                 f" got {response.status_code}"
             )
 
-    def test_update_with_invalid_key(self, client: TestClient):
+    def test_admin_key_header_is_no_longer_accepted(self, client: TestClient):
+        """``X-Admin-Key`` was removed — it must never authenticate."""
+        response = client.get(
+            "/api/recent", headers={"X-Admin-Key": "any-key-at-all"},
+        )
+        assert response.status_code == 401
+
+    def test_malformed_authorization_header_rejected(self, client: TestClient):
+        for header in ("Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "token123"):
+            response = client.get(
+                "/api/recent", headers={"Authorization": header},
+            )
+            assert response.status_code == 401, f"header={header!r}"
+
+    def test_expired_token_rejected(self, client: TestClient, monkeypatch):
+        private_key, public_key = _rsa_keypair()
+        monkeypatch.setenv("CLERK_ISSUER", CLERK_TEST_ISSUER)
+        monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
+        expired = _rs256_token(private_key, exp_offset=-300)
+        response = client.get(
+            "/api/recent", headers={"Authorization": f"Bearer {expired}"},
+        )
+        assert response.status_code == 401
+
+    def test_wrong_issuer_token_rejected(self, client: TestClient, monkeypatch):
+        private_key, public_key = _rsa_keypair()
+        monkeypatch.setenv("CLERK_ISSUER", CLERK_TEST_ISSUER)
+        monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
+        forged = _rs256_token(private_key, iss="https://attacker.example")
+        response = client.get(
+            "/api/recent", headers={"Authorization": f"Bearer {forged}"},
+        )
+        assert response.status_code == 401
+
+    def test_update_with_invalid_token(self, client: TestClient):
         response = client.put(
             "/api/urls/somecode",
             json={"original_url": "https://example.com/"},
-            headers={"X-Admin-Key": "bad-key"},
+            headers={"Authorization": "Bearer bad-token"},
         )
         assert response.status_code == 401
 
-    def test_delete_with_invalid_key(self, client: TestClient):
+    def test_delete_with_invalid_token(self, client: TestClient):
         response = client.delete(
             "/api/urls/somecode",
-            headers={"X-Admin-Key": "bad-key"},
+            headers={"Authorization": "Bearer bad-token"},
         )
         assert response.status_code == 401
 
-    def test_stats_export_with_invalid_key(self, client: TestClient):
+    def test_stats_export_with_invalid_token(self, client: TestClient):
         response = client.get(
             "/api/stats/somecode/export",
-            headers={"X-Admin-Key": "bad-key"},
+            headers={"Authorization": "Bearer bad-token"},
         )
         assert response.status_code == 401
 
@@ -208,44 +236,9 @@ class TestErrorMessage:
 
 # ---------------------------------------------------------------------------
 # Clerk JWT verification (hermetic unit tests — no network, no real JWKS).
+# The offline JWKS/RSA doubles live in conftest.py so every test module
+# (not just this one) can mint valid tokens via the ``auth_headers`` fixture.
 # ---------------------------------------------------------------------------
-
-_CLERK_TEST_ISSUER = "https://clerk.tinylnk.test"
-
-
-class _StubSigningKey:
-    """Duck-typed stand-in for ``jwt.PyJWK`` (only ``.key`` is accessed)."""
-
-    def __init__(self, key):
-        self.key = key
-
-
-class _StubJWKClient:
-    """Offline ``PyJWKClient`` double that serves a fixed signing key."""
-
-    def __init__(self, key):
-        self._key = key
-
-    def get_signing_key_from_jwt(self, token):
-        return _StubSigningKey(self._key)
-
-
-def _rsa_keypair():
-    """Generate a throwaway RSA key pair for offline JWT signing."""
-    private_key = rsa.generate_private_key(
-        public_exponent=65537, key_size=2048,
-    )
-    return private_key, private_key.public_key()
-
-
-def _rs256_token(private_key, *, iss=_CLERK_TEST_ISSUER, include_iss=True,
-                 exp_offset=300):
-    """Build a properly signed RS256 token resembling a Clerk session JWT."""
-    now = int(time.time())
-    claims: dict = {"sub": "user_test_123", "iat": now, "exp": now + exp_offset}
-    if include_iss:
-        claims["iss"] = iss
-    return jwt.encode(claims, private_key, algorithm="RS256")
 
 
 class TestClerkTokenVerification:
@@ -265,7 +258,7 @@ class TestClerkTokenVerification:
     @staticmethod
     def _stub_jwks(monkeypatch, public_key):
         """Route verify_clerk_token to an offline JWKS serving public_key."""
-        monkeypatch.setenv("CLERK_ISSUER", _CLERK_TEST_ISSUER)
+        monkeypatch.setenv("CLERK_ISSUER", CLERK_TEST_ISSUER)
         monkeypatch.setattr(auth, "_CLERK_JWKS_CLIENT", _StubJWKClient(public_key))
 
     def test_verify_rejects_garbage_token(self, monkeypatch):
@@ -323,7 +316,7 @@ class TestClerkTokenVerification:
             def get_signing_key_from_jwt(self, token):
                 raise RuntimeError("JWKS endpoint unreachable")
 
-        monkeypatch.setenv("CLERK_ISSUER", _CLERK_TEST_ISSUER)
+        monkeypatch.setenv("CLERK_ISSUER", CLERK_TEST_ISSUER)
         monkeypatch.setattr(auth, "PyJWKClient", _ExplodingJWKClient)
         token = jwt.encode(
             {"sub": "user_1"}, "hmac-test-secret-0123456789abcdef", algorithm="HS256",

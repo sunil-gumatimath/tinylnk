@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 from urllib.parse import urlparse
 
+from sqlalchemy import func as _sa_func
 from sqlalchemy import text as _sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -84,16 +85,22 @@ def update_url(
         url.original_url = str(data.original_url)
 
     if data.custom_alias is not None:
-        # Check uniqueness (skip if same as current)
-        if data.custom_alias != url.custom_alias:
+        # "" is the explicit "remove the alias" sentinel (see URLUpdate), so a
+        # blank value in the edit modal actually clears it instead of writing
+        # a phantom alias or silently doing nothing.
+        alias = data.custom_alias.strip()
+        if not alias:
+            url.custom_alias = None
+        elif alias != url.custom_alias:
+            # Check uniqueness (skip if same as current)
             existing = (
                 db.query(models.URL)
-                .filter(models.URL.custom_alias == data.custom_alias)
+                .filter(models.URL.custom_alias == alias)
                 .first()
             )
             if existing and existing.id != url.id:
                 raise ValueError("This alias is already taken.")
-            url.custom_alias = data.custom_alias or None
+            url.custom_alias = alias
 
     if data.tag is not None:
         url.tag = data.tag or None
@@ -108,11 +115,36 @@ def update_url(
             )
 
     if data.max_clicks is not None:
+        # 0 (or negative) is the explicit "remove the click limit" sentinel.
         url.max_clicks = data.max_clicks if data.max_clicks > 0 else None
 
     db.commit()
     db.refresh(url)
     return url
+
+
+def _ensure_utc(value: datetime | None) -> datetime | None:
+    """Attach UTC to naive datetimes so comparisons stay timezone-aware."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _filtered_clicks_query(
+    db: Session,
+    url_id: int,
+    start_date: datetime | None,
+    end_date: datetime | None,
+):
+    """Base ClickEvent query for one link, with the date-range filter applied."""
+    query = db.query(models.ClickEvent).filter(models.ClickEvent.url_id == url_id)
+    start_date = _ensure_utc(start_date)
+    end_date = _ensure_utc(end_date)
+    if start_date:
+        query = query.filter(models.ClickEvent.clicked_at >= start_date)
+    if end_date:
+        query = query.filter(models.ClickEvent.clicked_at <= end_date)
+    return query
 
 
 def record_click(
@@ -145,55 +177,88 @@ def get_url_stats(
     short_code: str,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
+    recent_limit: int = 50,
 ) -> dict | None:
-    """Get analytics for a specific short URL, optionally filtered by date range."""
+    """Get analytics for a specific short URL, optionally filtered by date range.
+
+    Aggregates in SQL (COUNT / GROUP BY) so links with large click histories
+    never load every event into memory. UA strings are parsed once per
+    *distinct* value instead of once per click.
+    """
     url = get_url_by_code(db, short_code)
     if not url:
         return None
 
-    query = (
-        db.query(models.ClickEvent)
-        .filter(models.ClickEvent.url_id == url.id)
+    base = _filtered_clicks_query(db, url.id, start_date, end_date)
+
+    total_clicks = (
+        base.with_entities(_sa_func.count(models.ClickEvent.id)).scalar() or 0
     )
 
-    # Apply date range filter
-    if start_date:
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-        query = query.filter(models.ClickEvent.clicked_at >= start_date)
-    if end_date:
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-        query = query.filter(models.ClickEvent.clicked_at <= end_date)
+    date_rows = (
+        base.with_entities(
+            _sa_func.date(models.ClickEvent.clicked_at).label("day"),
+            _sa_func.count(models.ClickEvent.id).label("n"),
+        )
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+    clicks_by_date = [{"name": day, "value": n} for day, n in date_rows if day]
 
-    clicks = query.order_by(models.ClickEvent.clicked_at.desc()).all()
+    referrer_rows = (
+        base.with_entities(
+            models.ClickEvent.referrer,
+            _sa_func.count(models.ClickEvent.id).label("n"),
+        )
+        .group_by(models.ClickEvent.referrer)
+        .all()
+    )
+    referrer_dict: Counter[str] = Counter()
+    for raw_referrer, n in referrer_rows:
+        if not raw_referrer:
+            continue
+        domain = urlparse(raw_referrer).hostname or raw_referrer
+        referrer_dict[domain] += n
 
-    recent_clicks = clicks[:50]
-
-    clicks_by_date_dict = Counter()
-    browser_dict = Counter()
-    os_dict = Counter()
-    referrer_dict = Counter()
-    for click in clicks:
-        date_str = click.clicked_at.strftime("%Y-%m-%d")
-        clicks_by_date_dict[date_str] += 1
-
-        if click.referrer:
-            parsed = urlparse(click.referrer)
-            domain = parsed.hostname or click.referrer
-            referrer_dict[domain] += 1
-
-        if click.user_agent:
-            ua = parse(click.user_agent)
-            browser_dict[ua.browser.family] += 1
-            os_dict[ua.os.family] += 1
+    ua_rows = (
+        base.with_entities(
+            models.ClickEvent.user_agent,
+            _sa_func.count(models.ClickEvent.id).label("n"),
+        )
+        .group_by(models.ClickEvent.user_agent)
+        .all()
+    )
+    browser_dict: Counter[str] = Counter()
+    os_dict: Counter[str] = Counter()
+    # Distinct user agents are parsed once and reused for the recent-clicks
+    # list, so that feed shows "Chrome · Windows" instead of a raw UA string.
+    ua_cache: dict[str | None, tuple[str, str]] = {}
+    for ua_string, n in ua_rows:
+        if ua_string:
+            ua = parse(ua_string)
+            browser, os_name = ua.browser.family, ua.os.family
         else:
-            browser_dict["Unknown"] += 1
-            os_dict["Unknown"] += 1
+            browser = os_name = "Unknown"
+        ua_cache[ua_string] = (browser, os_name)
+        browser_dict[browser] += n
+        os_dict[os_name] += n
 
-    clicks_by_date = [
-        {"name": k, "value": v} for k, v in sorted(clicks_by_date_dict.items())
-    ]
+    recent_clicks = []
+    for click in (
+        base.order_by(models.ClickEvent.clicked_at.desc()).limit(recent_limit).all()
+    ):
+        browser, os_name = ua_cache.get(click.user_agent, ("Unknown", "Unknown"))
+        recent_clicks.append(
+            {
+                "clicked_at": click.clicked_at,
+                "referrer": click.referrer,
+                "user_agent": click.user_agent,
+                "browser": browser,
+                "os": os_name,
+            }
+        )
+
     browser_stats = [{"name": k, "value": v} for k, v in browser_dict.items()]
     os_stats = [{"name": k, "value": v} for k, v in os_dict.items()]
     referrer_stats = [{"name": k, "value": v} for k, v in referrer_dict.most_common()]
@@ -205,7 +270,8 @@ def get_url_stats(
         "expires_at": url.expires_at,
         "max_clicks": url.max_clicks,
         "tag": url.tag,
-        "total_clicks": len(clicks),
+        "custom_alias": url.custom_alias,
+        "total_clicks": total_clicks,
         "clicks_by_date": clicks_by_date,
         "browser_stats": browser_stats,
         "os_stats": os_stats,
@@ -225,27 +291,14 @@ def export_stats_csv(
     if not url:
         return None
 
-    query = (
-        db.query(models.ClickEvent)
-        .filter(models.ClickEvent.url_id == url.id)
-    )
-
-    if start_date:
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-        query = query.filter(models.ClickEvent.clicked_at >= start_date)
-    if end_date:
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-        query = query.filter(models.ClickEvent.clicked_at <= end_date)
-
-    clicks = query.order_by(models.ClickEvent.clicked_at.desc()).all()
+    query = _filtered_clicks_query(db, url.id, start_date, end_date)
 
     buf = StringIO()
     writer = csv.writer(buf)
     writer.writerow(["clicked_at", "referrer", "browser", "os", "ip_address"])
 
-    for click in clicks:
+    # Stream in batches so huge histories don't materialize as ORM objects.
+    for click in query.order_by(models.ClickEvent.clicked_at.desc()).yield_per(1000):
         browser = "Unknown"
         os_name = "Unknown"
         if click.user_agent:
@@ -253,8 +306,9 @@ def export_stats_csv(
             browser = ua.browser.family
             os_name = ua.os.family
 
+        clicked_at = _ensure_utc(click.clicked_at)
         writer.writerow([
-            click.clicked_at.isoformat() if click.clicked_at else "",
+            clicked_at.isoformat() if clicked_at else "",
             click.referrer or "Direct",
             browser,
             os_name,

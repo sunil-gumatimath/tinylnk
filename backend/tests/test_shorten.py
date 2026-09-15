@@ -1,6 +1,8 @@
 """Tests for the ``POST /api/shorten`` endpoint — URL creation, validation,
 alias handling, SSRF prevention, and schema checks."""
 
+from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 
@@ -53,8 +55,29 @@ class TestCreateShortUrl:
         expected_keys = {
             "id", "original_url", "short_code", "short_url",
             "created_at", "expires_at", "max_clicks", "tag", "click_count",
+            "custom_alias",
         }
         assert set(data.keys()) == expected_keys
+        # The alias is reported separately from short_code so the edit modal can
+        # prefill (and clear) it; short_code stays the routing value.
+        assert data["custom_alias"] is None
+
+    def test_response_timestamps_carry_utc_offset(self, client: TestClient):
+        """SQLite returns naive datetimes — the API must re-attach UTC.
+
+        Without an explicit offset the browser parses the value as local time
+        and every date in the UI shifts by the viewer's UTC offset.
+        """
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://tz.example/path", "expires_in_hours": 1},
+        )
+        data = response.json()
+        assert data["created_at"].endswith("Z")
+        assert data["expires_at"].endswith("Z")
+        parsed = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timedelta(0)
 
 
 class TestCustomAlias:
@@ -70,6 +93,18 @@ class TestCustomAlias:
         data = response.json()
         assert data["short_code"] == "my-test-alias"
         assert data["short_url"].endswith("/my-test-alias")
+        # short_code carries the alias for routing, but the alias itself is
+        # reported separately so the edit modal can prefill it.
+        assert data["custom_alias"] == "my-test-alias"
+
+    def test_response_without_alias_reports_null(self, client: TestClient):
+        """A generated link reports custom_alias=null, not the random code."""
+        response = client.post(
+            "/api/shorten", json={"url": "https://example.com/no-alias"}
+        )
+        data = response.json()
+        assert data["custom_alias"] is None
+        assert data["short_code"] != ""
 
     def test_alias_too_short(self, client: TestClient):
         """An alias shorter than 3 characters is rejected."""
@@ -296,6 +331,15 @@ class TestOptionalParameters:
         assert response.status_code == 200
         assert response.json()["expires_at"] is not None
 
+    def test_fractional_expires_in_hours(self, client: TestClient):
+        """The UI's '30 minutes' option sends 0.5 — must not 422."""
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/half-hour", "expires_in_hours": 0.5},
+        )
+        assert response.status_code == 200
+        assert response.json()["expires_at"] is not None
+
     def test_max_clicks(self, client: TestClient):
         """Setting max_clicks should be reflected in the response."""
         response = client.post(
@@ -421,7 +465,7 @@ class TestParameterValidation:
         assert response.json()["tag"] == tag
 
     def test_update_with_zero_expires_in_hours_clears_expiry(
-        self, client: TestClient, admin_key: str
+        self, client: TestClient, auth_headers: dict
     ):
         """PUT with expires_in_hours=0 clears an existing expiry — update
         semantics intentionally allow 0 even though create rejects it."""
@@ -439,16 +483,92 @@ class TestParameterValidation:
         updated = client.put(
             "/api/urls/clear-expiry-test",
             json={"expires_in_hours": 0},
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert updated.status_code == 200
         assert updated.json()["expires_at"] is None
+
+    def test_update_with_empty_alias_clears_alias(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """PUT with custom_alias="" removes the alias (the edit-modal "clear")."""
+        client.post(
+            "/api/shorten",
+            json={
+                "url": "https://example.com/alias-clear",
+                "custom_alias": "alias-to-drop",
+            },
+        )
+
+        updated = client.put(
+            "/api/urls/alias-to-drop",
+            json={"custom_alias": ""},
+            headers=auth_headers,
+        )
+        assert updated.status_code == 200
+        data = updated.json()
+        assert data["custom_alias"] is None
+        # The response still routes through the generated code.
+        assert data["short_code"] != "alias-to-drop"
+        assert data["short_url"].endswith(data["short_code"])
+
+    def test_update_omitting_alias_keeps_it(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """A tag-only edit must not wipe an existing alias."""
+        client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/keep-alias", "custom_alias": "keep-alias"},
+        )
+
+        updated = client.put(
+            "/api/urls/keep-alias",
+            json={"tag": "retagged"},
+            headers=auth_headers,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["custom_alias"] == "keep-alias"
+        assert updated.json()["tag"] == "retagged"
+
+    def test_update_with_zero_max_clicks_clears_limit(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """PUT with max_clicks=0 removes the cap so the link lives on."""
+        created = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/limit", "max_clicks": 2},
+        )
+        code = created.json()["short_code"]
+        assert created.json()["max_clicks"] == 2
+
+        updated = client.put(
+            f"/api/urls/{code}",
+            json={"max_clicks": 0},
+            headers=auth_headers,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["max_clicks"] is None
+
+    def test_update_rejects_negative_max_clicks(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """Only 0 is a sentinel; negative values stay invalid."""
+        created = client.post(
+            "/api/shorten", json={"url": "https://example.com/neg-limit"}
+        )
+        code = created.json()["short_code"]
+        response = client.put(
+            f"/api/urls/{code}",
+            json={"max_clicks": -1},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
 
 
 class TestRecentSearchWildcardEscaping:
     """GET /api/recent search must treat user-supplied % and _ literally."""
 
-    def test_search_percent_matched_literally(self, client, admin_key: str):
+    def test_search_percent_matched_literally(self, client, auth_headers: dict):
         """Searching '100%' finds only URLs containing the literal text, and a
         bare '%' does not act as a match-all wildcard."""
         client.post(
@@ -461,7 +581,7 @@ class TestRecentSearchWildcardEscaping:
         response = client.get(
             "/api/recent",
             params={"search": "100%"},
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         urls = [item["original_url"] for item in response.json()]
@@ -473,7 +593,7 @@ class TestRecentSearchWildcardEscaping:
         response = client.get(
             "/api/recent",
             params={"search": "%"},
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         assert response.json() == [
@@ -487,10 +607,11 @@ class TestRecentSearchWildcardEscaping:
                 "max_clicks": None,
                 "tag": None,
                 "click_count": 0,
+                "custom_alias": None,
             }
         ]
 
-    def test_search_plain_text_still_works(self, client, admin_key: str):
+    def test_search_plain_text_still_works(self, client, auth_headers: dict):
         """An ordinary text search still matches the target URL."""
         client.post(
             "/api/shorten", json={"url": "https://example.com/docs-page"}
@@ -499,7 +620,7 @@ class TestRecentSearchWildcardEscaping:
         response = client.get(
             "/api/recent",
             params={"search": "docs-page"},
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         urls = [item["original_url"] for item in response.json()]

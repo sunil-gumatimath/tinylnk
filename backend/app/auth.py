@@ -1,9 +1,8 @@
-"""Authentication — Clerk JWT verification and X-Admin-Key fallback."""
+"""Authentication — Clerk JWT verification for management endpoints."""
 
 import base64
 import logging
 import os
-import secrets
 from typing import Annotated
 
 import jwt
@@ -81,22 +80,16 @@ def verify_clerk_token(token: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Auth dependency — Clerk Bearer token, with X-Admin-Key fallback
+# Auth dependency — Clerk Bearer token only
 # ---------------------------------------------------------------------------
-
-_ADMIN_KEY = os.environ.get("TINYLNK_ADMIN_KEY", "")
 
 
 def require_auth(request: Request) -> dict:
-    """Verify the request is authenticated.
-
-    1. First tries a Clerk Bearer token on the ``Authorization`` header.
-    2. Then falls back to the ``X-Admin-Key`` header checked against
-       the configured ``TINYLNK_ADMIN_KEY`` (all environments).
-    3. If neither succeeds, returns 401.
+    """Verify the request carries a valid Clerk Bearer token.
 
     Returns ``{"sub": "<clerk_user_id>"}`` on success.
-    Raises 401 otherwise.
+    Raises 401 otherwise — including when no auth header is sent, when the
+    token is invalid/expired, and when Clerk itself is not configured.
     """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -104,15 +97,6 @@ def require_auth(request: Request) -> dict:
         user_id = verify_clerk_token(token)
         if user_id:
             return {"sub": user_id}
-
-    # Fallback — accept X-Admin-Key (all environments)
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if (
-        admin_key
-        and _ADMIN_KEY
-        and secrets.compare_digest(admin_key, _ADMIN_KEY)
-    ):
-        return {"sub": "admin"}
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

@@ -33,3 +33,37 @@ class ClickEvent(Base):
     ip_address = Column(String(45), nullable=True)
 
     url = relationship("URL", back_populates="clicks")
+
+
+class SchemaVersion(Base):
+    """Single-row table recording the schema version of this database file.
+
+    tinylnk has no migration framework (Alembic); tables are created via
+    ``Base.metadata.create_all``. The version row lets future code detect a
+    stale database file and fail loudly instead of misbehaving silently.
+    """
+
+    __tablename__ = "schema_version"
+
+    id = Column(Integer, primary_key=True)
+    version = Column(Integer, nullable=False, default=1)
+    upgraded_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+CURRENT_SCHEMA_VERSION = 1
+
+
+def ensure_schema_version(db) -> None:
+    """Create the version row on fresh databases; validate on existing ones."""
+    row = db.query(SchemaVersion).first()
+    if row is None:
+        db.add(SchemaVersion(version=CURRENT_SCHEMA_VERSION))
+        db.commit()
+    elif row.version != CURRENT_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Unsupported database schema version {row.version} "
+            f"(expected {CURRENT_SCHEMA_VERSION}). Delete the SQLite file "
+            "or migrate it before starting."
+        )

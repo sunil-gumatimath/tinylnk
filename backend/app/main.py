@@ -25,15 +25,20 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
 from .auth import AuthUser
-from .database import Base, engine, get_db
+from .database import Base, SessionLocal, engine, get_db
 from .logging_config import RequestLogMiddleware, setup_logging
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
 # Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
 setup_logging()
 
-# Create tables
+# Create tables and stamp/check the schema version (fails loudly on stale DBs)
 Base.metadata.create_all(bind=engine)
+_startup_db = SessionLocal()
+try:
+    models.ensure_schema_version(_startup_db)
+finally:
+    _startup_db.close()
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -41,9 +46,13 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 # CORS origins (comma-separated env var, locked down by default)
-ALLOWED_ORIGINS = os.getenv(
-    "TINYLNK_CORS_ORIGINS", "http://localhost:5173,http://localhost:8000"
-).split(",")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "TINYLNK_CORS_ORIGINS", "http://localhost:5173,http://localhost:8000"
+    ).split(",")
+    if origin.strip()
+]
 
 # Optional: show a warning page before redirecting (default: disabled)
 REDIRECT_WARNING = os.getenv("TINYLNK_REDIRECT_WARNING", "false").lower() == "true"
@@ -115,11 +124,13 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-# Mount static files
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
-if not os.path.exists(STATIC_DIR):
-    # Try looking for dist in a slightly different place for Docker
-    STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+# Mount static files — candidate locations for the built frontend (local
+# checkout layout vs Docker image layout), first existing dir wins.
+_STATIC_CANDIDATES = [
+    os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),
+    "/app/frontend/dist",  # Docker image layout (absolute, no guessing)
+]
+STATIC_DIR = next((p for p in _STATIC_CANDIDATES if os.path.isdir(p)), _STATIC_CANDIDATES[0])
 
 ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
@@ -313,7 +324,6 @@ async def shorten_url(
         raise HTTPException(status_code=409, detail=str(e)) from e
 
     # Build the short URL
-    base_url = str(request.base_url).rstrip("/")
     code = db_url.custom_alias or db_url.short_code
 
     return schemas.URLResponse(
@@ -326,6 +336,7 @@ async def shorten_url(
         max_clicks=db_url.max_clicks,
         tag=db_url.tag,
         click_count=db_url.click_count,
+        custom_alias=db_url.custom_alias,
     )
 
 
@@ -386,6 +397,7 @@ async def update_url_endpoint(
         max_clicks=updated.max_clicks,
         tag=updated.tag,
         click_count=updated.click_count,
+        custom_alias=updated.custom_alias,
     )
 
 
@@ -447,7 +459,7 @@ async def get_recent(
     tag: str | None = Query(None, description="Filter by tag"),
     db: Session = Depends(get_db),
 ):
-    """Get recently created URLs with optional search and tag filtering (admin only)."""
+    """Get recently created URLs with optional search and tag filtering."""
     urls = crud.get_recent_urls(db, search=search, tag=tag)
     base_url = str(request.base_url).rstrip("/")
     return [
@@ -461,6 +473,7 @@ async def get_recent(
             max_clicks=u.max_clicks,
             tag=u.tag,
             click_count=u.click_count,
+            custom_alias=u.custom_alias,
         )
         for u in urls
     ]

@@ -214,6 +214,77 @@ class TestUpdateUrl:
         )
         assert updated.expires_at is None
 
+    def test_clear_alias_with_empty_string(self, db_session: Session):
+        """An empty alias is the "remove it" sentinel, not a no-op."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/drop-alias", custom_alias="dropme"),
+        )
+        assert url.custom_alias == "dropme"
+
+        updated = crud.update_url(
+            db_session,
+            url,
+            schemas.URLUpdate(custom_alias=""),
+        )
+        assert updated.custom_alias is None
+        # The generated code still resolves; the alias no longer does.
+        assert crud.get_url_by_code(db_session, "dropme") is None
+        assert crud.get_url_by_code(db_session, updated.short_code) is not None
+
+    def test_blank_whitespace_alias_clears(self, db_session: Session):
+        """Whitespace-only input from the UI must clear, not store " "."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/ws-alias", custom_alias="wsmewell"),
+        )
+        updated = crud.update_url(
+            db_session,
+            url,
+            schemas.URLUpdate(custom_alias="   "),
+        )
+        assert updated.custom_alias is None
+
+    def test_omitted_alias_leaves_alias_unchanged(self, db_session: Session):
+        """A field left out of the payload must not clear the alias."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/keep-alias", custom_alias="keepme"),
+        )
+        updated = crud.update_url(
+            db_session,
+            url,
+            schemas.URLUpdate(tag="retagged"),
+        )
+        assert updated.custom_alias == "keepme"
+
+    def test_clear_max_clicks_with_zero(self, db_session: Session):
+        """max_clicks=0 removes the cap so the link is unlimited again."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/limit-clear", max_clicks=3),
+        )
+        assert url.max_clicks == 3
+
+        updated = crud.update_url(
+            db_session,
+            url,
+            schemas.URLUpdate(max_clicks=0),
+        )
+        assert updated.max_clicks is None
+
+    def test_omitted_max_clicks_leaves_limit_unchanged(self, db_session: Session):
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/limit-keep", max_clicks=7),
+        )
+        updated = crud.update_url(
+            db_session,
+            url,
+            schemas.URLUpdate(tag="retagged"),
+        )
+        assert updated.max_clicks == 7
+
     def test_update_normalizes_nonpositive_max_clicks(self, db_session: Session):
         """crud.update_url normalizes <= 0 to None as defense-in-depth for
         programmatic callers that bypass schema validation (the schema itself
@@ -312,7 +383,7 @@ class TestSchemaValidation:
 
     @pytest.mark.parametrize("bad_value", [0, -3])
     def test_urlcreate_rejects_nonpositive_expires_in_hours(self, bad_value: int):
-        """expires_in_hours must be None or >= 1 on create."""
+        """expires_in_hours must be None or > 0 on create."""
         with pytest.raises(ValidationError):
             schemas.URLCreate(
                 url="https://example.com/x", expires_in_hours=bad_value
@@ -338,6 +409,18 @@ class TestSchemaValidation:
         assert data.expires_in_hours == 24
         assert data.tag == "ok"
 
+    def test_urlcreate_accepts_fractional_expires_in_hours(self):
+        """The UI offers sub-hour expiries (30 minutes = 0.5h); the schema
+        must accept fractional hours instead of 422ing them."""
+        data = schemas.URLCreate(
+            url="https://example.com/x", expires_in_hours=0.5
+        )
+        assert data.expires_in_hours == 0.5
+
+    def test_urlupdate_accepts_fractional_expires_in_hours(self):
+        """Fractional hours are valid on update too (0 still clears)."""
+        assert schemas.URLUpdate(expires_in_hours=0.5).expires_in_hours == 0.5
+
     def test_urlupdate_zero_expires_in_hours_is_valid(self):
         """UPDATE intentionally keeps ge=0 so clients can send 0 to clear an
         existing expiry (see crud.update_url)."""
@@ -347,9 +430,18 @@ class TestSchemaValidation:
         with pytest.raises(ValidationError):
             schemas.URLUpdate(expires_in_hours=-1)
 
-    def test_urlupdate_rejects_nonpositive_max_clicks(self):
+    def test_urlupdate_max_clicks_zero_means_clear(self):
+        """max_clicks=0 is the "remove the click limit" sentinel (UPDATE-only).
+
+        It mirrors expires_in_hours=0, which already clears the expiry, so the
+        edit modal can distinguish "leave unchanged" from "remove".
+        """
+        update = schemas.URLUpdate(max_clicks=0)
+        assert update.max_clicks == 0
+
+    def test_urlupdate_rejects_negative_max_clicks(self):
         with pytest.raises(ValidationError):
-            schemas.URLUpdate(max_clicks=0)
+            schemas.URLUpdate(max_clicks=-1)
 
     def test_urlupdate_enforces_tag_max_length(self):
         with pytest.raises(ValidationError):

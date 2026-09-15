@@ -13,14 +13,14 @@ class TestHealthCheck:
         assert response.json() == {"status": "ok", "database": "connected"}
 
     def test_health_does_not_require_auth(self, client: TestClient):
-        """The health endpoint is accessible without any admin key."""
+        """The health endpoint is accessible without any credentials."""
         response = client.get("/api/health")
         assert response.status_code == 200
 
-        # Also verify that sending a key still works
+        # Also works even when random auth headers are sent
         response = client.get(
             "/api/health",
-            headers={"X-Admin-Key": "some-random-key"},
+            headers={"Authorization": "Bearer not-a-real-token"},
         )
         assert response.status_code == 200
 

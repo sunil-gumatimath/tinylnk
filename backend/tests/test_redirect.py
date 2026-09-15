@@ -27,25 +27,25 @@ class TestBasicRedirect:
         assert r.headers["location"] == "https://example.com/page?foo=bar&baz=1"
 
     def test_redirect_records_click(self, client: TestClient, sample_url: str,
-                                    admin_key: str):
+                                    auth_headers: dict):
         """After a redirect, the click_count should be 1."""
         client.get(f"/{sample_url}", follow_redirects=False)
         stats = client.get(
             f"/api/stats/{sample_url}",
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert stats.status_code == 200
         assert stats.json()["total_clicks"] == 1
 
     def test_click_count_increments(self, client: TestClient, sample_url: str,
-                                    admin_key: str):
+                                    auth_headers: dict):
         """Multiple redirects increment the click count."""
         for _ in range(5):
             client.get(f"/{sample_url}", follow_redirects=False)
 
         stats = client.get(
             f"/api/stats/{sample_url}",
-            headers={"X-Admin-Key": admin_key},
+            headers=auth_headers,
         )
         assert stats.status_code == 200
         assert stats.json()["total_clicks"] == 5
@@ -68,7 +68,7 @@ class TestErrorConditions:
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
-    def test_expired_url_410(self, client: TestClient, db_session, admin_key):
+    def test_expired_url_410(self, client: TestClient, db_session, auth_headers):
         """A URL whose expires_at is in the past returns 410 Gone."""
         # Create with a valid expiry window, then patch expires_at to an
         # explicitly past date to guarantee expiry. (expires_in_hours must
@@ -93,7 +93,7 @@ class TestErrorConditions:
         assert response.status_code == 410
         assert "expired" in response.json()["detail"].lower()
 
-    def test_max_clicks_exhausted_410(self, client: TestClient, admin_key: str):
+    def test_max_clicks_exhausted_410(self, client: TestClient, auth_headers: dict):
         """A URL that has reached its max_clicks limit returns 410."""
         resp = client.post(
             "/api/shorten",
