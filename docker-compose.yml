@@ -1,6 +1,11 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Inlined into the frontend bundle at build time — changing it requires
+        # a rebuild (`docker compose up -d --build`).
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
     restart: unless-stopped
     env_file: .env
     ports:
@@ -13,9 +18,10 @@ services:
       - TINYLNK_CORS_ORIGINS=${TINYLNK_CORS_ORIGINS:-http://localhost:8000}
       - TINYLNK_REDIRECT_WARNING=${TINYLNK_REDIRECT_WARNING:-false}
       - TINYLNK_ENABLE_DOCS=${TINYLNK_ENABLE_DOCS:-false}
-      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-}
-      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
+      # Backend JWT verification: issuer (or the publishable key it is derived
+      # from). No secret key is used — keys come from Clerk's public JWKS.
       - CLERK_ISSUER=${CLERK_ISSUER:-}
+      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-}
     networks:
       - tinylnk-network
 

@@ -107,7 +107,9 @@ def _jwt_token():
     """Create a valid RS256 Clerk JWT signed with the generated key."""
     from time import time
 
-    now = int(time())
+    # NumericDate claims accept non-integer JSON numbers, so the float from
+    # time() is used as-is (no int() conversion that could be flagged/raise).
+    now = time()
     claims = {
         "sub": "e2e_test_user",
         "iat": now,
@@ -130,15 +132,20 @@ _jwks_thread = Thread(target=_jwks_server.serve_forever, daemon=True)
 _jwks_thread.start()
 
 for path in (DB, DB + "-wal", DB + "-shm"):
-    if os.path.exists(path):
+    try:
         os.remove(path)
+    except FileNotFoundError:
+        pass  # fresh run — nothing to clean
+    except OSError as exc:
+        # A leftover file we cannot delete (Windows lock, permissions) would
+        # otherwise abort the run with a confusing error before it starts.
+        print(f"warning: could not remove stale {path}: {exc}")
 
 env = dict(
     os.environ,
     SQLITE_DB_PATH=DB,
     CLERK_ISSUER=_CLERK_ISSUER,
     CLERK_PUBLISHABLE_KEY="pk_test_e2e",
-    CLERK_SECRET_KEY="sk_test_e2e",
     TINYLNK_CORS_ORIGINS="http://localhost:8010",
 )
 

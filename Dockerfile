@@ -18,16 +18,24 @@ ENV PATH="/root/.bun/bin:$PATH"
 COPY backend/requirements.txt backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Copy frontend and build
+# Copy frontend manifest and install dependencies
 COPY frontend/package.json frontend/
-RUN cd frontend && bun install
+WORKDIR /app/frontend
+RUN bun install
 
 # Copy source code
+WORKDIR /app
 COPY frontend/ frontend/
 COPY backend/ backend/
 
 # Build frontend
-RUN cd frontend && bun run build
+# Vite inlines VITE_* variables into the bundle at build time, so the Clerk
+# publishable key has to be present as an ENV *here* — setting it on the
+# running container has no effect on the already-built JS.
+ARG VITE_CLERK_PUBLISHABLE_KEY=""
+ENV VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY}
+WORKDIR /app/frontend
+RUN bun run build
 
 # Start production image
 FROM python:3.10-slim
