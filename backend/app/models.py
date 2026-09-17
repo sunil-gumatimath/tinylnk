@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from .database import Base
 
@@ -9,45 +9,51 @@ from .database import Base
 class URL(Base):
     __tablename__ = "urls"
 
-    id = Column(Integer, primary_key=True, index=True)
-    original_url = Column(Text, nullable=False)
-    short_code = Column(String(20), unique=True, index=True, nullable=False)
-    custom_alias = Column(String(50), unique=True, index=True, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    expires_at = Column(DateTime, nullable=True, index=True)
-    max_clicks = Column(Integer, nullable=True, index=True)
-    tag = Column(String(50), nullable=True, index=True)
-    click_count = Column(Integer, default=0)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    original_url: Mapped[str] = mapped_column(Text, nullable=False)
+    short_code: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
+    custom_alias: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    max_clicks: Mapped[int | None] = mapped_column(Integer, index=True)
+    tag: Mapped[str | None] = mapped_column(String(50), index=True)
+    click_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    clicks = relationship("ClickEvent", back_populates="url", cascade="all, delete-orphan")
+    clicks: Mapped[list["ClickEvent"]] = relationship(
+        "ClickEvent", back_populates="url", cascade="all, delete-orphan"
+    )
 
 
 class ClickEvent(Base):
     __tablename__ = "click_events"
 
-    id = Column(Integer, primary_key=True, index=True)
-    url_id = Column(Integer, ForeignKey("urls.id"), nullable=False, index=True)
-    clicked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    referrer = Column(String(500), nullable=True)
-    user_agent = Column(String(500), nullable=True)
-    ip_address = Column(String(45), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    url_id: Mapped[int] = mapped_column(ForeignKey("urls.id"), index=True)
+    clicked_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+    referrer: Mapped[str | None] = mapped_column(String(500))
+    user_agent: Mapped[str | None] = mapped_column(String(500))
+    ip_address: Mapped[str | None] = mapped_column(String(45))
 
-    url = relationship("URL", back_populates="clicks")
+    url: Mapped["URL"] = relationship("URL", back_populates="clicks")
 
 
 class SchemaVersion(Base):
-    """Single-row table recording the schema version of this database file.
+    """Single-row table recording the schema version of this database.
 
     tinylnk has no migration framework (Alembic); tables are created via
     ``Base.metadata.create_all``. The version row lets future code detect a
-    stale database file and fail loudly instead of misbehaving silently.
+    stale database and fail loudly instead of misbehaving silently.
     """
 
     __tablename__ = "schema_version"
 
-    id = Column(Integer, primary_key=True)
-    version = Column(Integer, nullable=False, default=1)
-    upgraded_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    upgraded_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
 
@@ -55,15 +61,15 @@ class SchemaVersion(Base):
 CURRENT_SCHEMA_VERSION = 1
 
 
-def ensure_schema_version(db) -> None:
+def ensure_schema_version(db: Session) -> None:
     """Create the version row on fresh databases; validate on existing ones."""
-    row = db.query(SchemaVersion).first()
+    row = db.get(SchemaVersion, 1)
     if row is None:
-        db.add(SchemaVersion(version=CURRENT_SCHEMA_VERSION))
+        db.add(SchemaVersion(id=1, version=CURRENT_SCHEMA_VERSION))
         db.commit()
     elif row.version != CURRENT_SCHEMA_VERSION:
         raise RuntimeError(
             f"Unsupported database schema version {row.version} "
-            f"(expected {CURRENT_SCHEMA_VERSION}). Delete the SQLite file "
+            f"(expected {CURRENT_SCHEMA_VERSION}). Delete the database "
             "or migrate it before starting."
         )

@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Button, Modal } from 'antd';
+import { useEffect, useState } from 'react';
+import { App as AntdApp, Button, Modal } from 'antd';
 import { QrCode } from 'lucide-react';
+import { isReadableQr, saveBlob } from '../ui';
 
 interface QrModalProps {
   open: boolean;
@@ -11,7 +12,7 @@ interface QrModalProps {
 
 const PRESET_COLORS = [
   { label: 'Black', value: 'black' },
-  { label: 'Navy', value: '1d4ed8' },
+  { label: 'Blue', value: '1d4ed8' },
   { label: 'Purple', value: '7c3aed' },
   { label: 'Teal', value: '0891b2' },
   { label: 'Green', value: '059669' },
@@ -19,17 +20,19 @@ const PRESET_COLORS = [
   { label: 'Orange', value: 'f97316' },
 ];
 
+// Light backgrounds only: QRs need dark modules on a light surface to scan
+// reliably, and isReadableQr() would disable every foreground swatch on a
+// dark background anyway — so don't offer palettes that can't scan.
 const BG_COLORS = [
   { label: 'White', value: 'white' },
-  { label: 'Light', value: 'f5f5f5' },
+  { label: 'Light gray', value: 'f5f5f5' },
   { label: 'Cream', value: 'fffaf2' },
-  { label: 'Dark', value: '1e293b' },
-  { label: 'Black', value: '000000' },
 ];
 
 const DEFAULT_PALETTE = { fg: 'black', bg: 'white' } as const;
 
 export function QrModal({ open, shortCode, onClose }: QrModalProps) {
+  const { message } = AntdApp.useApp();
   // The palette belongs to one link: opening a different one falls back to the
   // defaults for it (derived during render — no reset effect needed), so
   // colours never leak from the previous QR code.
@@ -47,27 +50,18 @@ export function QrModal({ open, shortCode, onClose }: QrModalProps) {
     ? `/api/qr/${encodeURIComponent(shortCode)}?fg=${active.fg}&bg=${active.bg}`
     : null;
   const downloadName = `tinylnk-qr-${shortCode || 'code'}.png`;
+  const [imageFailed, setImageFailed] = useState(false);
+  // Reset the preview-error state whenever the rendered QR changes.
+  useEffect(() => setImageFailed(false), [qrSrc]);
 
   const handleDownload = async () => {
     if (!qrSrc) return;
     try {
       const response = await fetch(qrSrc);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = blobUrl;
-      anchor.download = downloadName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(blobUrl);
+      if (!response.ok) throw new Error('QR download failed');
+      saveBlob(await response.blob(), downloadName);
     } catch {
-      const anchor = document.createElement('a');
-      anchor.href = qrSrc;
-      anchor.download = downloadName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
+      message.error('Could not download the QR code. Please try again.');
     }
   };
 
@@ -87,43 +81,70 @@ export function QrModal({ open, shortCode, onClose }: QrModalProps) {
           Close
         </Button>,
         <Button key="download" type="primary" onClick={handleDownload}>
-          Download
+          Download PNG
         </Button>,
       ]}
     >
       <div className="qr-shell">
-        {qrSrc ? <img src={qrSrc} alt="QR code" className="qr-image" /> : null}
+        {qrSrc ? (
+          imageFailed ? (
+            <p className="modal-state">Could not load the QR code. Close this dialog and open it again to retry.</p>
+          ) : (
+            <img
+              src={qrSrc}
+              alt={`QR code for short link ${shortCode}`}
+              className="qr-image"
+              onError={() => setImageFailed(true)}
+            />
+          )
+        ) : null}
       </div>
 
+      <p className="dashboard-subtitle">
+        Scan to open the short link. Low-contrast color combinations are disabled.
+        Test the downloaded QR code before printing or sharing it.
+      </p>
       <div className="qr-customizer">
         <div className="qr-color-group">
-          <label className="qr-color-label">Foreground</label>
+          <label className="qr-color-label">Code color</label>
           <div className="qr-color-swatches">
-            {PRESET_COLORS.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                className={`qr-swatch ${active.fg === c.value ? 'active' : ''}`}
-                style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
-                onClick={() => setFgColor(c.value)}
-                title={c.label}
-              />
-            ))}
+            {PRESET_COLORS.map((c) => {
+              const readable = isReadableQr(c.value, active.bg);
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={`qr-swatch ${active.fg === c.value ? 'active' : ''}`}
+                  style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
+                  onClick={() => setFgColor(c.value)}
+                  disabled={!readable}
+                  aria-pressed={active.fg === c.value}
+                  aria-label={`${c.label} code color`}
+                  title={readable ? c.label : `${c.label} — too low-contrast on this background`}
+                />
+              );
+            })}
           </div>
         </div>
         <div className="qr-color-group">
           <label className="qr-color-label">Background</label>
           <div className="qr-color-swatches">
-            {BG_COLORS.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                className={`qr-swatch ${active.bg === c.value ? 'active' : ''}`}
-                style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
-                onClick={() => setBgColor(c.value)}
-                title={c.label}
-              />
-            ))}
+            {BG_COLORS.map((c) => {
+              const readable = isReadableQr(active.fg, c.value);
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={`qr-swatch ${active.bg === c.value ? 'active' : ''}`}
+                  style={{ background: c.value.length === 6 ? `#${c.value}` : c.value }}
+                  onClick={() => setBgColor(c.value)}
+                  disabled={!readable}
+                  aria-pressed={active.bg === c.value}
+                  aria-label={`${c.label} background`}
+                  title={readable ? c.label : `${c.label} — unreadable with this color`}
+                />
+              );
+            })}
           </div>
         </div>
       </div>

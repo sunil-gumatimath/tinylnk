@@ -443,6 +443,45 @@ a {
   margin-top: 40px;
 }
 
+.status-tag.status-active {
+  color: var(--success);
+}
+
+.status-tag.status-expired {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+:root.dark .status-tag.status-expired {
+  color: #f87171;
+}
+
+.status-tag.status-limit {
+  color: var(--tag-warn-text);
+}
+
+.form-error {
+  margin-bottom: 16px;
+}
+
+.table-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 80px 0;
+  color: var(--text-muted);
+}
+
+.modal-loading-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 0;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
 .dashboard-header {
   display: flex;
   justify-content: space-between;
@@ -473,6 +512,29 @@ a {
   display: flex;
   justify-content: center;
   padding: 80px 0;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.chart-legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
 }
 
 .tag-filter {
@@ -770,12 +832,24 @@ a {
     align-items: stretch;
   }
 
-  .link-actions,
-  .result-actions {
+  /* Compact icon actions stay in one tappable row on phones instead of
+     stacking into six full-width buttons. */
+  .link-actions {
     width: 100%;
+    justify-content: space-between;
   }
 
-  .link-actions .ant-btn,
+  .link-actions .ant-btn {
+    width: 44px;
+    min-width: 44px;
+    flex: 0 0 auto;
+    padding-inline: 0;
+  }
+
+  .link-actions .ant-btn span:not(.anticon) {
+    display: none;
+  }
+
   .result-actions .ant-btn,
   .primary-button {
     width: 100%;
@@ -787,13 +861,14 @@ a {
 
 .search-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
-  overflow: hidden;
 }
 
 .search-input {
   flex: 1;
+  min-width: 220px;
 }
 
 /* ─── QR Customizer ──────────────────────────────── */
@@ -822,7 +897,14 @@ a {
 
 .qr-color-swatches {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.qr-swatch:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .qr-swatch {
@@ -852,6 +934,7 @@ a {
   gap: 12px;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* ─── Edit Form ──────────────────────────────────── */

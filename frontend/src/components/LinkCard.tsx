@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Button, Popconfirm, Tag } from 'antd';
 import { BarChart2, Calendar, Check, Copy, ExternalLink, Pencil, QrCode, Share2, Tag as TagIcon, Trash2 } from 'lucide-react';
 import type { ShortenedURL } from '../types';
+import { linkStatus } from '../ui';
 
 interface LinkCardProps {
   record: ShortenedURL;
   getShortUrl: (record: Pick<ShortenedURL, 'short_url' | 'short_code'>) => string;
-  onCopy: (text: string) => Promise<void>;
+  onCopy: (text: string) => Promise<boolean>;
   onShowQr: (shortCode: string) => void;
-  onShowStats: (shortCode: string, shortUrl: string) => Promise<void>;
+  onShowStats: (shortCode: string, shortUrl: string) => void;
   onDelete: (shortCode: string) => Promise<void>;
   onEdit: (record: ShortenedURL) => void;
   onShare: (shortUrl: string) => void;
@@ -16,11 +17,14 @@ interface LinkCardProps {
 
 export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, onDelete, onEdit, onShare }: LinkCardProps) {
   const [copied, setCopied] = useState(false);
+  const status = linkStatus(record);
+  const statusClass =
+    status === 'Expired' ? 'status-expired' : status === 'Click limit reached' ? 'status-limit' : 'status-active';
 
   const handleCopyClick = async () => {
-    await onCopy(getShortUrl(record));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const succeeded = await onCopy(getShortUrl(record));
+    setCopied(succeeded);
+    if (succeeded) setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -69,8 +73,8 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
           />
           <Popconfirm
             title="Delete this link?"
-            description="This also removes its analytics history."
-            okText="Delete"
+            description="The short link and its QR codes will stop working. Its analytics will be permanently deleted. This cannot be undone."
+            okText="Delete link"
             // The trigger is already a red/danger button — the confirm must be
             // destructive too instead of AntD's default blue primary.
             okButtonProps={{ danger: true }}
@@ -89,12 +93,15 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
       </div>
 
       <div className="link-meta">
+        <Tag bordered={false} className={`meta-tag status-tag ${statusClass}`}>
+          {status}
+        </Tag>
         <Tag bordered={false} className="meta-tag">
-          {record.click_count} clicks{record.max_clicks ? ` / ${record.max_clicks}` : ''}
+          {record.click_count} {record.click_count === 1 ? 'click' : 'clicks'}{record.max_clicks ? ` · limit ${record.max_clicks}` : ''}
         </Tag>
         <Tag bordered={false} className="meta-tag">
           <Calendar size={12} />
-          {new Date(record.created_at).toLocaleDateString()}
+          Created {new Date(record.created_at).toLocaleDateString()}
         </Tag>
         {record.tag ? (
           <Tag bordered={false} className="meta-tag">
@@ -104,7 +111,7 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
         ) : null}
         {record.expires_at ? (
           <Tag bordered={false} className="meta-tag subtle-tag">
-            Expires {new Date(record.expires_at).toLocaleDateString()}
+            {status === 'Expired' ? 'Expired' : 'Expires'} {new Date(record.expires_at).toLocaleString()}
           </Tag>
         ) : null}
       </div>

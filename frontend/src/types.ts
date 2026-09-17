@@ -46,7 +46,7 @@ export interface UrlStats {
 export interface ShortenFormValues {
   url: string;
   custom_alias?: string;
-  expires_in_hours?: number;
+  expires_in_hours?: number | 'CUSTOM';
   /** Hours typed into the "Custom..." expiry box (kept separate so the
   preset Select and the custom input never share one AntD field name). */
   custom_expires_in_hours?: number;

@@ -1,80 +1,102 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { App as AntdApp, Button, DatePicker, Modal } from 'antd';
 import { BarChart2, Calendar, Download, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { chartColors } from '../theme';
+import { errorText, readJson, saveBlob } from '../ui';
 import type { UrlStats } from '../types';
 import type { Dayjs } from 'dayjs';
 
 const { RangePicker } = DatePicker;
 
 interface StatsModalProps {
-  open: boolean;
-  loading: boolean;
+  /** Short code (or alias) whose analytics are shown. */
+  shortCode: string;
   currentShortUrl: string;
-  stats: UrlStats | null;
   onClose: () => void;
-  onDateRangeChange?: (startDate: string | null, endDate: string | null) => void;
-  /** Auth headers for the CSV export (Clerk JWT). */
+  /** Auth headers for the admin-protected requests (Clerk JWT). */
   getAuthHeaders: () => Promise<Record<string, string>>;
 }
 
-export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onDateRangeChange, getAuthHeaders }: StatsModalProps) {
+export default function StatsModal({ shortCode, currentShortUrl, onClose, getAuthHeaders }: StatsModalProps) {
   const { message } = AntdApp.useApp();
+  const [stats, setStats] = useState<UrlStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  // Kept locally so the CSV export covers exactly the range shown in the
-  // charts — the endpoint supports it, the UI just has to pass it along.
-  const [range, setRange] = useState<{ start: string | null; end: string | null }>({
-    start: null,
-    end: null,
-  });
+  // The controlled picker is the single source of truth for the range: charts,
+  // KPIs and the CSV export all cover exactly the window shown here, and the
+  // selection resets when a different link is opened (fresh component via key).
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const requestRef = useRef<AbortController | null>(null);
 
-  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
-    if (!dates || !dates[0] || !dates[1]) {
-      setRange({ start: null, end: null });
-      onDateRangeChange?.(null, null);
-      return;
+  const fetchStats = async (start: string | null, end: string | null, signal: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (start) params.set('start_date', start);
+      if (end) params.set('end_date', end);
+      const query = params.toString();
+      const response = await fetch(`/api/stats/${encodeURIComponent(shortCode)}${query ? `?${query}` : ''}`, {
+        headers: await getAuthHeaders(),
+        signal,
+      });
+      const data = await readJson<UrlStats>(response);
+      if (!signal.aborted) setStats(data);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setError(errorText(err));
+    } finally {
+      if (!signal.aborted) setLoading(false);
     }
-    const start = dates[0].startOf('day').toISOString();
-    const end = dates[1].endOf('day').toISOString();
-    setRange({ start, end });
-    onDateRangeChange?.(start, end);
   };
+
+  // Reload analytics when the modal opens or the range changes; abort the
+  // in-flight request when the modal closes or reopens for another link.
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    fetchStats(range?.[0]?.startOf('day').toISOString() ?? null, range?.[1]?.endOf('day').toISOString() ?? null, controller.signal);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortCode, range, reloadKey]);
+
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => setRange(dates && dates[0] && dates[1] ? dates : null);
 
   const handleExport = async () => {
     if (!stats) return;
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (range.start) params.set('start_date', range.start);
-      if (range.end) params.set('end_date', range.end);
+      if (range?.[0]) params.set('start_date', range[0].startOf('day').toISOString());
+      if (range?.[1]) params.set('end_date', range[1].endOf('day').toISOString());
       const query = params.toString();
       const response = await fetch(
-        `/api/stats/${stats.short_code}/export${query ? `?${query}` : ''}`,
-        {
-          headers: await getAuthHeaders(),
-        },
+        `/api/stats/${encodeURIComponent(stats.short_code)}/export${query ? `?${query}` : ''}`,
+        { headers: await getAuthHeaders() },
       );
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `tinylnk_${stats.short_code}_analytics.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (blob.size === 0) throw new Error('Export is empty');
+      saveBlob(blob, `tinylnk_${stats.short_code}_analytics.csv`);
     } catch {
-      message.error('Export failed. Please try again.');
+      message.error('Could not download the CSV file. Please try again.');
     } finally {
       setExporting(false);
     }
   };
 
+  const dayjsValue = range;
+
   return (
     <Modal
-      open={open}
+      open
       onCancel={onClose}
       footer={null}
       width={880}
@@ -85,8 +107,13 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
         </div>
       }
     >
-      {loading ? (
-        <div className="modal-state">Loading analytics...</div>
+      {error ? (
+        <div className="modal-state">
+          <p>{error}</p>
+          <Button onClick={() => setReloadKey((key) => key + 1)}>Try again</Button>
+        </div>
+      ) : loading && !stats ? (
+        <div className="modal-state" role="status">Loading analytics…</div>
       ) : !stats ? (
         <div className="modal-state">No analytics available for this link yet.</div>
       ) : (
@@ -102,16 +129,16 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
               <div className="kpi-card panel-surface">
                 <MousePointerClick size={18} />
                 <strong>{stats.total_clicks}</strong>
-                <span>Total clicks</span>
+                <span>Total clicks{range ? ' (selected range)' : ''}</span>
               </div>
               <div className="kpi-card panel-surface">
                 <Target size={18} />
                 <strong>{stats.max_clicks ?? 'Unlimited'}</strong>
-                <span>Click limit</span>
+                <span>Lifetime click limit</span>
               </div>
               <div className="kpi-card panel-surface">
                 <Calendar size={18} />
-                <strong>{new Date(stats.created_at).toLocaleDateString()}</strong>
+                <strong>{stats.created_at ? new Date(stats.created_at).toLocaleDateString() : '—'}</strong>
                 <span>Created on</span>
               </div>
             </div>
@@ -119,9 +146,11 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
 
           <section className="stats-toolbar">
             <RangePicker
+              value={dayjsValue}
               onChange={handleDateChange}
               style={{ borderRadius: 14 }}
               placeholder={['Start date', 'End date']}
+              allowEmpty={[true, true]}
             />
             <Button
               icon={<Download size={16} />}
@@ -131,6 +160,16 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
               Export CSV
             </Button>
           </section>
+
+          <p className="dashboard-subtitle">
+            {range ? 'Showing clicks in the selected date range.' : 'Showing clicks for all time.'}
+            {' '}Date filters and activity times use your local time zone; daily chart totals use UTC.
+            Clicks count recorded visits, not unique visitors.
+          </p>
+
+          {loading && stats ? (
+            <div className="modal-state" role="status">Updating analytics…</div>
+          ) : null}
 
           {stats.clicks_by_date?.length ? (
             <section className="panel-surface chart-panel">
@@ -149,7 +188,7 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                     <Tooltip
                       contentStyle={{
                         background: 'var(--tooltip-bg)',
-                        border: '1px solid var(--tooltip-border)',
+                        border: '1px solid var(--tooltip-tooltip-border, var(--tooltip-border))',
                         borderRadius: 16,
                         color: 'var(--text)',
                       }}
@@ -159,7 +198,9 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                 </ResponsiveContainer>
               </div>
             </section>
-          ) : null}
+          ) : (
+            <div className="modal-state">No clicks recorded in this period yet.</div>
+          )}
 
           {(stats.browser_stats?.length || stats.os_stats?.length) ? (
             <section className="stats-split">
@@ -181,6 +222,14 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="chart-legend">
+                    {stats.browser_stats.map((item, index) => (
+                      <span key={item.name} className="chart-legend-item">
+                        <i style={{ background: chartColors[index % chartColors.length] }} />
+                        {item.name} · {item.value}
+                      </span>
+                    ))}
+                    </div>
                 </div>
               ) : null}
 
@@ -202,6 +251,14 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="chart-legend">
+                    {stats.os_stats.map((item, index) => (
+                      <span key={item.name} className="chart-legend-item">
+                        <i style={{ background: chartColors[(index + 2) % chartColors.length] }} />
+                        {item.name} · {item.value}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </section>
@@ -210,8 +267,8 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
           {stats.referrer_stats?.length ? (
             <section className="panel-surface chart-panel">
               <div className="chart-heading">
-                <h4>Referrers</h4>
-                <span>Traffic sources</span>
+                <h4>Referring websites</h4>
+                <span>Visits with a recorded referrer</span>
               </div>
               <div className="chart-wrap compact">
                 <ResponsiveContainer width="100%" height="100%">
@@ -225,13 +282,21 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                   </PieChart>
                 </ResponsiveContainer>
               </div>
+              <div className="chart-legend">
+                {stats.referrer_stats.map((item, index) => (
+                  <span key={item.name} className="chart-legend-item">
+                    <i style={{ background: chartColors[(index + 4) % chartColors.length] }} />
+                    {item.name} · {item.value}
+                  </span>
+                ))}
+              </div>
             </section>
           ) : null}
 
           <section className="panel-surface activity-panel">
             <div className="chart-heading">
               <h4>Recent activity</h4>
-              <span>Recent clicks</span>
+              <span>Up to 50 latest clicks in this period</span>
             </div>
             {stats.recent_clicks?.length ? (
               <div className="activity-list">
@@ -240,7 +305,7 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                     <div className="activity-time">{new Date(click.clicked_at).toLocaleString()}</div>
                     <div className="activity-row">
                       <Globe size={14} />
-                      <span>{click.referrer || 'Direct traffic'}</span>
+                      <span>{click.referrer || 'No referrer recorded'}</span>
                     </div>
                     <div
                       className="activity-row"
@@ -251,14 +316,14 @@ export function StatsModal({ open, loading, currentShortUrl, stats, onClose, onD
                           hover-away tooltip. */}
                       <span>
                         {[click.browser, click.os].filter(Boolean).join(' · ') ||
-                          'Unknown device'}
+                          'Browser and operating system unavailable'}
                       </span>
                     </div>
                   </article>
                 ))}
               </div>
             ) : (
-              <div className="modal-state">Clicks will appear here as visitors start using this link.</div>
+              <div className="modal-state">No clicks recorded in this period. Share the link or choose a different date range.</div>
             )}
           </section>
         </div>

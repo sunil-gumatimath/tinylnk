@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Form, Input, InputNumber, Select } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Select } from "antd";
 import {
 	Check,
 	ChevronDown,
@@ -19,12 +19,15 @@ interface ShortenerFormProps {
 	result: ShortenedURL | null;
 	onSubmit: (values: ShortenFormValues) => Promise<void>;
 	onToggleAdvanced: () => void;
-	onCopy: (value: string) => Promise<void>;
+	onCopy: (value: string) => Promise<boolean>;
 	onShowQr: (shortCode: string) => void;
 	getShortUrl: (
 		record: Pick<ShortenedURL, "short_url" | "short_code">,
 	) => string;
 	validateUrlInput: (_rule: unknown, value: string) => Promise<void>;
+	/** Submission failure shown inside the panel; null/undefined hides it. */
+	error?: string | null;
+	onDismissError?: () => void;
 }
 
 export function ShortenerForm({
@@ -38,34 +41,39 @@ export function ShortenerForm({
 	onShowQr,
 	getShortUrl,
 	validateUrlInput,
+	error,
+	onDismissError,
 }: ShortenerFormProps) {
 	const [copied, setCopied] = useState(false);
-	const [showCustomExpiry, setShowCustomExpiry] = useState(false);
+	// Derived from the form value instead of mirrored state: the custom input
+	// shows only while the Select holds the "Custom…" sentinel, so it resets
+	// automatically when a preset is chosen or the form is cleared.
+	const showCustomExpiry = Form.useWatch("expires_in_hours", form) === "CUSTOM";
 	const handleCopyClick = async (url: string) => {
-		await onCopy(url);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+		const succeeded = await onCopy(url);
+		setCopied(succeeded);
+		if (succeeded) setTimeout(() => setCopied(false), 2000);
 	};
 
 	return (
 		<section id="shorten-form" className="composer-section">
 			<div className="section-heading">
-				<span className="section-kicker">Quick Create</span>
-				<h2>Enter your destination URL</h2>
-				<p>
-					Turn a long URL into a short, trackable link. Pick an alias,
-					set an expiry or click limit, tag it, then generate a QR code.
-				</p>
+				<h2>Create a short link</h2>
+				<p>Paste your destination URL. Customize your link with the optional settings.</p>
 			</div>
 
 			<div className="composer-layout">
 				<div className="panel-surface composer-panel">
-					<div className="panel-header">
-						<div>
-							<span className="panel-label">Create a link</span>
-							<h3>Link settings</h3>
-						</div>
-					</div>
+					{error ? (
+						<Alert
+							className="form-error"
+							type="error"
+							showIcon
+							message={error}
+							closable
+							onClose={onDismissError}
+						/>
+					) : null}
 
 					<Form
 						form={form}
@@ -77,7 +85,7 @@ export function ShortenerForm({
 							name="url"
 							label="Destination URL"
 							rules={[
-								{ required: true, message: "Please input a URL." },
+								{ required: true, message: "Enter the URL you want to shorten." },
 								{ validator: validateUrlInput },
 							]}
 						>
@@ -103,6 +111,8 @@ export function ShortenerForm({
 								type="button"
 								className="advanced-toggle"
 								onClick={onToggleAdvanced}
+								aria-expanded={showAdvanced}
+								aria-controls="advanced-options"
 							>
 								{showAdvanced ? (
 									<ChevronUp size={16} />
@@ -110,20 +120,20 @@ export function ShortenerForm({
 									<ChevronDown size={16} />
 								)}
 								{showAdvanced
-									? "Hide advanced controls"
-									: "Configure link options"}
+									? "Hide link options"
+									: "Show link options"}
 							</button>
 						</div>
 
 						{showAdvanced ? (
-							<div className="advanced-grid">
-								<Form.Item name="custom_alias" label="Custom alias">
+							<div className="advanced-grid" id="advanced-options">
+								<Form.Item name="custom_alias" label="Custom alias (optional)" extra="Choose the text after the slash: 3–50 letters, numbers, hyphens, or underscores.">
 									<Input placeholder="spring-launch" />
 								</Form.Item>
 								<Form.Item
 									name="expires_in_hours"
 									label="Expires in"
-									extra="Leave blank for no expiry."
+									extra="The link stops redirecting when it expires. Leave blank for no expiry."
 								>
 									<Select
 										allowClear
@@ -137,15 +147,12 @@ export function ShortenerForm({
 											{ label: "3 days", value: 72 },
 											{ label: "7 days", value: 168 },
 											{ label: "30 days", value: 720 },
-											{ label: "Custom...", value: "CUSTOM" },
+											{ label: "Custom duration…", value: "CUSTOM" },
 										]}
 										onChange={(val) => {
-											if (val === "CUSTOM") {
-												setShowCustomExpiry(true);
-												form.setFieldValue("expires_in_hours", undefined);
-											} else {
-												setShowCustomExpiry(false);
-												form.setFieldValue("expires_in_hours", val ?? undefined);
+											if (val !== "CUSTOM") {
+												// Never reuse hours typed for the custom mode.
+												form.setFieldValue("custom_expires_in_hours", undefined);
 											}
 										}}
 									/>
@@ -153,8 +160,8 @@ export function ShortenerForm({
 								{showCustomExpiry ? (
 									<Form.Item
 										name="custom_expires_in_hours"
-										label="Custom hours"
-										rules={[{ required: true, message: "Enter hours" }]}
+										label="Duration in hours"
+										rules={[{ required: true, message: "Enter a duration between 1 and 8,760 hours." }]}
 									>
 										<InputNumber
 											style={{ width: "100%" }}
@@ -166,8 +173,8 @@ export function ShortenerForm({
 								) : null}
 								<Form.Item
 									name="max_clicks"
-									label="Max clicks"
-									extra="Leave blank for no limit."
+									label="Click limit (optional)"
+									extra="The link stops redirecting once it reaches this many clicks. Leave blank for no limit."
 								>
 									<InputNumber
 										style={{ width: "100%" }}
@@ -175,7 +182,7 @@ export function ShortenerForm({
 										placeholder="250"
 									/>
 								</Form.Item>
-								<Form.Item name="tag" label="Tag">
+								<Form.Item name="tag" label="Tag (optional)" extra="Group related links, such as a campaign or project.">
 									<Input placeholder="marketing" />
 								</Form.Item>
 							</div>
@@ -190,9 +197,9 @@ export function ShortenerForm({
 					{result ? (
 						<div className="result-panel panel-surface result-panel--flex">
 							<div className="result-header">
-								<span className="result-badge">Live result</span>
+								<span className="result-badge">Short link</span>
 								<span className="result-title">
-									Your short link is ready to share
+									Your short link
 								</span>
 							</div>
 							<div className="result-link">{getShortUrl(result)}</div>
@@ -210,7 +217,7 @@ export function ShortenerForm({
 									icon={<ScanQrCode size={16} />}
 									onClick={() => onShowQr(result.short_code)}
 								>
-									Show QR
+									Show QR code
 								</Button>
 								<Button
 									icon={<ExternalLink size={16} />}
@@ -218,7 +225,7 @@ export function ShortenerForm({
 									target="_blank"
 									rel="noopener noreferrer"
 								>
-									Open
+									Open link
 								</Button>
 							</div>
 						</div>
@@ -230,10 +237,9 @@ export function ShortenerForm({
 								color="var(--text-muted)"
 								className="empty-state__icon"
 							/>
-							<h3>Your link shows up here</h3>
+							<h3>Ready when you are</h3>
 							<p className="empty-state__hint">
-								Paste a URL above and hit create — your short link and a
-								QR code button appear right below.
+								Create a short link, then copy it or download a QR code to share.
 							</p>
 						</div>
 					)}

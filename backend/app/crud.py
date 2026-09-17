@@ -1,4 +1,10 @@
-"""Database CRUD operations for the URL shortener."""
+"""Database CRUD operations for the URL shortener.
+
+Works on both SQLite (local development, default) and PostgreSQL
+(Neon/Vercel, via DATABASE_URL). The only dialect-sensitive spot is
+``get_url_stats``, where SQL ``date()`` returns text on SQLite and
+``datetime.date`` on PostgreSQL — both normalized with ``str()``.
+"""
 
 import csv
 import secrets
@@ -204,7 +210,8 @@ def get_url_stats(
         .order_by("day")
         .all()
     )
-    clicks_by_date = [{"name": day, "value": n} for day, n in date_rows if day]
+    # SQLite returns text; PostgreSQL returns datetime.date for SQL date().
+    clicks_by_date = [{"name": str(day), "value": n} for day, n in date_rows if day]
 
     referrer_rows = (
         base.with_entities(

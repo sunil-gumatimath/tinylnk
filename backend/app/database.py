@@ -2,41 +2,55 @@ import os
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 default_db_path = os.path.join(PROJECT_ROOT, "urlshortener.db")
 
-raw_db_path = os.getenv("SQLITE_DB_PATH", default_db_path)
-# Resolve relative paths against the project root so the value works regardless
-# of the directory the server is started from.
-db_path = raw_db_path if os.path.isabs(raw_db_path) else os.path.join(PROJECT_ROOT, raw_db_path)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if DATABASE_URL:
+    # Neon supplies postgresql:// URLs; select the installed psycopg v3 driver.
+    if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
+    if not DATABASE_URL.startswith("postgresql+psycopg://"):
+        raise RuntimeError("DATABASE_URL must be a PostgreSQL connection URL.")
+    engine = create_engine(
+        DATABASE_URL,
+        # Neon handles pooling. Do not retain idle connections across function invocations.
+        poolclass=NullPool,
+        connect_args={"connect_timeout": 10, "prepare_threshold": None},
+        echo=False,
+    )
+else:
+    if os.getenv("VERCEL"):
+        raise RuntimeError("Set DATABASE_URL before deploying to Vercel; SQLite is local-only.")
+    raw_db_path = os.getenv("SQLITE_DB_PATH", default_db_path)
+    db_path = raw_db_path if os.path.isabs(raw_db_path) else os.path.join(PROJECT_ROOT, raw_db_path)
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError("Could not create the local SQLite data directory.") from exc
+    DATABASE_URL = f"sqlite:///{db_path}"
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False, "timeout": 10},
+        echo=False,
+    )
 
-# Ensure the parent directory exists (matters for Docker volume mounts).
-os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-
-DATABASE_URL = f"sqlite:///{db_path}"
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 10},  # SQLite specific
-    echo=False,
-)
-
-
-@event.listens_for(engine, "connect")
-def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
-    """Single-writer tuning: WAL allows readers during writes, busy_timeout
-    makes writers wait instead of failing with 'database is locked'."""
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL;")
-    cursor.execute("PRAGMA busy_timeout = 5000;")
-    cursor.execute("PRAGMA synchronous = NORMAL;")
-    cursor.close()
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        """SQLite-only single-writer tuning for local development."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA busy_timeout = 5000;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 def get_db() -> Generator[Session, None, None]:

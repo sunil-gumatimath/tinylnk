@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { SignInButton, UserButton } from "@clerk/react";
 import { CLERK_ENABLED, useAppAuth } from "./clerk";
 import { LazyMotion, MotionConfig, domAnimation, motion, AnimatePresence } from "framer-motion";
 import {
 	App as AntdApp,
+	Alert,
 	Button,
 	Form,
 	Input,
@@ -19,9 +20,11 @@ import { LinkCard } from "./components/LinkCard";
 import { EditModal } from "./components/EditModal";
 import { QrModal } from "./components/QrModal";
 import { ShortenerForm } from "./components/ShortenerForm";
-import { StatsModal } from "./components/StatsModal";
+import { errorText, normalizeUrl, readJson, resolveExpiry, validateDestination } from "./ui";
+
+const StatsModal = lazy(() => import("./components/StatsModal"));
 import type { EditFormValues } from "./components/EditModal";
-import type { ShortenFormValues, ShortenedURL, UrlStats } from "./types";
+import type { ShortenFormValues, ShortenedURL } from "./types";
 
 const { Content } = Layout;
 const { Title, Paragraph } = Typography;
@@ -32,7 +35,7 @@ const cardVariants = {
 		opacity: 1,
 		y: 0,
 		scale: 1,
-		transition: { delay: i * 0.05, duration: 0.4 },
+		transition: { delay: Math.min(i, 5) * 0.04, duration: 0.25 },
 	}),
 	exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } },
 };
@@ -44,13 +47,16 @@ function App() {
 	const { message } = AntdApp.useApp();
 	const [loading, setLoading] = useState(false);
 	const [tableLoading, setTableLoading] = useState(false);
-	const [statsLoading, setStatsLoading] = useState(false);
+	const [createError, setCreateError] = useState<string | null>(null);
+	const [editError, setEditError] = useState<string | null>(null);
+	const [linksError, setLinksError] = useState<string | null>(null);
+	const linksRequest = useRef<AbortController | null>(null);
 	const [recentLinks, setRecentLinks] = useState<ShortenedURL[]>([]);
 	const [result, setResult] = useState<ShortenedURL | null>(null);
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [statsModalVisible, setStatsModalVisible] = useState(false);
 	const [currentShortUrl, setCurrentShortUrl] = useState<string>("");
-	const [currentStats, setCurrentStats] = useState<UrlStats | null>(null);
+	const [statsCode, setStatsCode] = useState<string | null>(null);
 	const [qrModalVisible, setQrModalVisible] = useState(false);
 	const [currentQrCode, setCurrentQrCode] = useState<string | null>(null);
 	const { isDark, toggleTheme } = useTheme();
@@ -100,7 +106,7 @@ function App() {
 			});
 			if (response.ok) {
 				const data = await response.json();
-				setAvailableTags(data);
+				if (!signal?.aborted) setAvailableTags(data);
 			}
 		} catch {
 			// Non-critical, silently fail
@@ -114,7 +120,14 @@ function App() {
 	) => {
 		if (!isAuthed) return;
 
+		linksRequest.current?.abort();
+		const controller = new AbortController();
+		linksRequest.current = controller;
+		const abort = () => controller.abort();
+		signal?.addEventListener("abort", abort, { once: true });
+		if (signal?.aborted) controller.abort();
 		setTableLoading(true);
+		setLinksError(null);
 		try {
 			const params = new URLSearchParams();
 			const searchTerm = search ?? searchQuery;
@@ -123,44 +136,19 @@ function App() {
 			if (tagFilter) params.set("tag", tagFilter);
 
 			const url = `/api/recent${params.toString() ? "?" + params.toString() : ""}`;
-			const response = await fetch(url, { headers: await authHeaders(), signal });
-
-			if (!response.ok) {
-				message.error("Could not load recent links.");
-				return;
-			}
-
-			const data = await response.json();
+			const response = await fetch(url, { headers: await authHeaders(), signal: controller.signal });
+			const data = await readJson<ShortenedURL[]>(response);
+			if (controller.signal.aborted) return;
 			setRecentLinks(data);
-
-			// Also fetch tags
-			await fetchTags();
+			await fetchTags(controller.signal);
 		} catch (error) {
-			if (error instanceof DOMException && error.name === "AbortError") return;
-			console.error("Failed to fetch recent links", error);
-			message.error("Could not load recent links.");
+			if (!controller.signal.aborted) setLinksError(errorText(error));
 		} finally {
-			setTableLoading(false);
-			setLinksLoaded(true);
-		}
-	};
-
-	const validateUrlInput = async (_rule: unknown, value: string) => {
-		if (!value) return Promise.resolve();
-
-		const normalized =
-			value.startsWith("http://") || value.startsWith("https://")
-				? value
-				: `https://${value}`;
-
-		try {
-			const parsed = new URL(normalized);
-			if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
-				throw new Error("Invalid domain");
+			signal?.removeEventListener("abort", abort);
+			if (!controller.signal.aborted) {
+				setTableLoading(false);
+				setLinksLoaded(true);
 			}
-			return Promise.resolve();
-		} catch {
-			return Promise.reject(new Error("Must be a valid URL with a domain."));
 		}
 	};
 
@@ -169,8 +157,10 @@ function App() {
 		try {
 			await navigator.clipboard.writeText(text);
 			message.success("Copied to clipboard.");
+			return true;
 		} catch {
-			message.error("Could not copy. Please copy manually.");
+			message.error("Could not copy the link. Select the short URL and copy it manually.");
+			return false;
 		}
 	};
 
@@ -178,8 +168,10 @@ function App() {
 		if (navigator.share) {
 			try {
 				await navigator.share({ title: "tinylnk", url: shortUrl });
-			} catch {
-				// User cancelled share
+			} catch (error) {
+				if (!(error instanceof DOMException && error.name === "AbortError")) {
+					message.error("Could not share this link. Try copying it instead.");
+				}
 			}
 		} else {
 			await handleCopy(shortUrl);
@@ -188,20 +180,15 @@ function App() {
 
 	const onFinish = async (values: ShortenFormValues) => {
 		setLoading(true);
-		setResult(null);
+		setCreateError(null);
 
 		try {
-			const hours =
-				values.expires_in_hours != null
-					? Number(values.expires_in_hours)
-					: values.custom_expires_in_hours != null
-						? Number(values.custom_expires_in_hours)
-						: null;
+			const hours = resolveExpiry(values);
 			const response = await fetch("/api/shorten", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					url: values.url,
+					url: normalizeUrl(values.url),
 					custom_alias: values.custom_alias?.trim() || null,
 					expires_in_hours: hours,
 					max_clicks: values.max_clicks ? Number(values.max_clicks) : null,
@@ -209,14 +196,11 @@ function App() {
 				}),
 			});
 
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data.detail || "Failed to shorten URL.");
-			}
-
+			const data = await readJson<ShortenedURL>(response);
 			setResult(data);
 			form.resetFields();
-			message.success("URL shortened successfully.");
+			setShowAdvanced(false);
+			message.success("Your short link is ready.");
 			if (isAuthed) {
 				await fetchRecentLinks();
 			}
@@ -224,67 +208,20 @@ function App() {
 			const errorMessage =
 				error instanceof Error
 					? error.message
-					: "An unexpected error occurred.";
-			message.error(errorMessage);
+					: "Could not create the link. Please try again.";
+			setCreateError(errorMessage);
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const showStats = async (shortCode: string, shortUrl: string) => {
+	// The modal is self-contained (keyed per link): it fetches its own data and
+	// owns the date-range state, so opening it only records which link is shown.
+	const showStats = (shortCode: string, shortUrl: string) => {
 		if (!isAuthed) return;
-
 		setCurrentShortUrl(shortUrl);
+		setStatsCode(shortCode);
 		setStatsModalVisible(true);
-		setStatsLoading(true);
-		setCurrentStats(null);
-
-		try {
-			const response = await fetch(`/api/stats/${shortCode}`, {
-				headers: await authHeaders(),
-			});
-
-			if (!response.ok) {
-				message.error("Failed to fetch stats.");
-				setStatsModalVisible(false);
-				return;
-			}
-
-			const data = await response.json();
-			setCurrentStats(data);
-		} catch (error) {
-			console.error("Failed to fetch stats", error);
-			message.error("An error occurred while loading stats.");
-			setStatsModalVisible(false);
-		} finally {
-			setStatsLoading(false);
-		}
-	};
-
-	const handleStatsDateChange = async (
-		startDate: string | null,
-		endDate: string | null,
-	) => {
-		if (!currentStats || !isAuthed) return;
-
-		setStatsLoading(true);
-
-		try {
-			const params = new URLSearchParams();
-			if (startDate) params.set("start_date", startDate);
-			if (endDate) params.set("end_date", endDate);
-
-			const url = `/api/stats/${currentStats.short_code}${params.toString() ? "?" + params.toString() : ""}`;
-			const response = await fetch(url, { headers: await authHeaders() });
-			if (response.ok) {
-				const data = await response.json();
-				setCurrentStats(data);
-			}
-		} catch (error) {
-			console.error("Failed to fetch filtered stats", error);
-		} finally {
-			setStatsLoading(false);
-		}
 	};
 
 	const handleDelete = async (shortCode: string) => {
@@ -298,7 +235,7 @@ function App() {
 
 			if (!response.ok) {
 				const data = await response.json();
-				message.error(data.detail || "Failed to delete link.");
+				message.error(data.detail || "Could not delete the link. Please try again.");
 				return;
 			}
 
@@ -306,19 +243,21 @@ function App() {
 			setRecentLinks((prev) => prev.filter((l) => l.short_code !== shortCode));
 		} catch (error) {
 			console.error("Failed to delete", error);
-			message.error("An error occurred while deleting.");
+			message.error("Could not delete the link. Check your connection and try again.");
 		}
 	};
 
 	const handleEdit = (record: ShortenedURL) => {
 		if (!isAuthed) return;
 		setEditingRecord(record);
+		setEditError(null);
 		setEditModalVisible(true);
 	};
 
 	const handleEditSave = async (shortCode: string, data: EditFormValues) => {
 		if (!isAuthed) return;
 		setEditLoading(true);
+		setEditError(null);
 
 		try {
 			const response = await fetch(`/api/urls/${shortCode}`, {
@@ -328,7 +267,7 @@ function App() {
 					...await authHeaders(),
 				},
 				body: JSON.stringify({
-					original_url: data.original_url || null,
+					original_url: normalizeUrl(data.original_url),
 					// "" clears the alias; the field is prefilled with the current
 					// alias, so a tag-only edit sends it back unchanged.
 					custom_alias: (data.custom_alias ?? "").trim(),
@@ -339,20 +278,15 @@ function App() {
 				}),
 			});
 
-			if (!response.ok) {
-				const errorData = await response.json();
-				message.error(errorData.detail || "Failed to update.");
-				setEditModalVisible(false);
-				return;
-			}
-
+			const updated = await readJson<ShortenedURL>(response);
+			setResult((previous) => previous?.id === updated.id ? updated : previous);
 			message.success("Link updated.");
 			setEditModalVisible(false);
 			setEditingRecord(null);
 			await fetchRecentLinks();
 		} catch (error) {
 			console.error("Failed to update", error);
-			message.error("An error occurred while updating.");
+			setEditError(errorText(error));
 		} finally {
 			setEditLoading(false);
 		}
@@ -360,12 +294,19 @@ function App() {
 
 	useEffect(() => {
 		if (!isAuthed) {
+			linksRequest.current?.abort();
+			setStatsModalVisible(false);
+			setEditModalVisible(false);
+			setLinksError(null);
+			setTableLoading(false);
 			setRecentLinks([]);
 			setAvailableTags([]);
 			setLinksLoaded(false);
 			return;
 		}
 
+		linksRequest.current?.abort();
+		setTableLoading(true);
 		const controller = new AbortController();
 		const timer = setTimeout(() => {
 			fetchRecentLinks(searchQuery, filterTag, controller.signal);
@@ -374,6 +315,7 @@ function App() {
 		return () => {
 			clearTimeout(timer);
 			controller.abort();
+			linksRequest.current?.abort();
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [isAuthed, searchQuery, filterTag]);
@@ -402,11 +344,11 @@ function App() {
 							<a href="/" className="logo">
 								tinylnk
 							</a>
-							<nav className="header-nav">
+							<nav className="header-nav" aria-label="Account and appearance">
 								<button
 									className="theme-toggle"
 									onClick={toggleTheme}
-									aria-label="Toggle theme"
+									aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
 								>
 									{isDark ? <Sun size={18} /> : <Moon size={18} />}
 								</button>
@@ -417,7 +359,7 @@ function App() {
 								) : CLERK_ENABLED ? (
 									<SignInButton mode="modal">
 										<Button type="primary" ghost>
-											Sign In
+											Sign in
 										</Button>
 									</SignInButton>
 								) : null}
@@ -425,7 +367,7 @@ function App() {
 						</div>
 					</header>
 
-					<Content className="app-content">
+					<Content className="app-content" id="main-content">
 						<div className="content-wrapper">
 							{/* ─── Hero ──────────────────────────────────────────────── */}
 							<Hero />
@@ -436,7 +378,9 @@ function App() {
 								showAdvanced={showAdvanced}
 								onToggleAdvanced={() => setShowAdvanced((v) => !v)}
 								onSubmit={onFinish}
-								validateUrlInput={validateUrlInput}
+								validateUrlInput={validateDestination}
+								error={createError}
+								onDismissError={() => setCreateError(null)}
 								result={result}
 								onCopy={handleCopy}
 								onShowQr={(shortCode) => {
@@ -449,7 +393,7 @@ function App() {
 							{/* Signed-out visitors can still shorten links, but the
 							    dashboard (search, cards, analytics) needs auth — say so
 							    instead of silently hiding it. */}
-							{!isAuthed && !authLoading && (
+							{CLERK_ENABLED && !isAuthed && !authLoading && (
 								<motion.section
 									className="dashboard-section"
 									initial={{ opacity: 0, y: 30 }}
@@ -458,11 +402,11 @@ function App() {
 								>
 									<div className="empty-state panel-surface">
 										<LogIn size={44} />
-										<Title level={4}>Sign in to manage your links</Title>
+										<Title level={4}>Manage this server’s links</Title>
 										<Paragraph className="dashboard-subtitle">
-											Links you create above keep working. Sign in
-											to see click analytics, edit, and delete them.
+											You can create a short link without signing in. Authorized users can sign in to edit links and view click analytics.
 										</Paragraph>
+										<SignInButton mode="modal"><Button type="primary">Sign in to manage links</Button></SignInButton>
 									</div>
 								</motion.section>
 							)}
@@ -480,7 +424,7 @@ function App() {
 												Dashboard
 											</Title>
 											<Paragraph className="dashboard-subtitle">
-												Manage your shortened URLs
+												View recent links on this server, edit destinations, and explore click analytics.
 											</Paragraph>
 										</div>
 										<Button
@@ -495,19 +439,21 @@ function App() {
 									<motion.div className="search-toolbar" layout>
 										<Input
 											prefix={<Search size={16} />}
-											placeholder="Search URLs..."
+											placeholder="Search URLs, aliases, or codes"
+											aria-label="Search links"
 											value={searchQuery}
 											onChange={(e) => setSearchQuery(e.target.value)}
 											allowClear
 											className="search-input"
 										/>
-										{availableTags.length > 0 && (
+										{(availableTags.length > 0 || filterTag) && (
 											<Select
 												placeholder="Filter by tag"
+												aria-label="Filter links by tag"
 												allowClear
 												className="tag-filter"
 												value={filterTag}
-												onChange={(value) => setFilterTag(value)}
+												onChange={(value) => setFilterTag(value ?? null)}
 												options={availableTags.map((tag) => ({
 													value: tag,
 													label: tag,
@@ -517,13 +463,21 @@ function App() {
 									</motion.div>
 
 									{tableLoading || !linksLoaded ? (
-										<div className="table-loading">
-											<Spin size="large" />
+										<div className="table-loading" role="status">
+											<Spin size="large" /><span>Loading links…</span>
 										</div>
+									) : linksError ? (
+										<Alert type="error" showIcon title="Could not load links" description={linksError}
+											action={<Button onClick={() => fetchRecentLinks()}>Try again</Button>} />
 									) : recentLinks.length === 0 ? (
 										<div className="empty-state panel-surface">
 											<FolderOpen size={44} />
-											<Title level={4}>No links yet</Title>
+											<Title level={4}>{searchQuery || filterTag ? "No matching links" : "No links yet"}</Title>
+											<Paragraph>{searchQuery || filterTag ? "Try a different search or clear your filters." : "Create a short link to start sharing and tracking clicks."}</Paragraph>
+											<Button onClick={() => {
+												if (searchQuery || filterTag) { setSearchQuery(""); setFilterTag(null); }
+												else document.getElementById("tinylnk-url-input")?.focus();
+											}}>{searchQuery || filterTag ? "Clear filters" : "Create a link"}</Button>
 										</div>
 									) : (
 										<div className="links-grid">
@@ -560,20 +514,19 @@ function App() {
 							)}
 
 							{/* ─── Modals ─────────────────────────────────────────────── */}
-							<StatsModal
-								open={statsModalVisible}
-								currentShortUrl={currentShortUrl}
-								stats={currentStats}
-								loading={statsLoading}
-								onClose={() => setStatsModalVisible(false)}
-								onDateRangeChange={handleStatsDateChange}
-								getAuthHeaders={authHeaders}
-							/>
+							{statsModalVisible && statsCode && (
+								<Suspense fallback={<div role="status" className="modal-loading-notice">Loading analytics… <Button onClick={() => setStatsModalVisible(false)}>Cancel</Button></div>}>
+									<StatsModal key={statsCode} shortCode={statsCode} currentShortUrl={currentShortUrl}
+										onClose={() => setStatsModalVisible(false)} getAuthHeaders={authHeaders} />
+								</Suspense>
+							)}
 							<EditModal
 								open={editModalVisible}
 								record={editingRecord}
 								loading={editLoading}
+								error={editError}
 								onClose={() => {
+									if (editLoading) return;
 									setEditModalVisible(false);
 									setEditingRecord(null);
 								}}

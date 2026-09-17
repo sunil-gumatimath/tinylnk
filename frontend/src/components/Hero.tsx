@@ -32,7 +32,7 @@ export function Hero() {
 					animate="visible"
 				>
 					Shorten links.{" "}
-					<span className="text-gradient">Keep the data.</span>
+					<span className="text-gradient">Make sharing simple.</span>
 				</motion.h1>
 
 				<motion.p
@@ -42,8 +42,8 @@ export function Hero() {
 					initial="hidden"
 					animate="visible"
 				>
-					Paste a long URL, get a short one back — with click tracking,
-					custom aliases, and QR codes, all running on your own server.
+					Create short links and share them as URLs or QR codes.
+					Self-host tinylnk to manage links and view click analytics on your server.
 				</motion.p>
 
 				<motion.div
@@ -63,7 +63,7 @@ export function Hero() {
 					</div>
 					<div className="hero-feature">
 						<ArrowDownRight size={16} />
-						<span>QR code generation</span>
+						<span>Downloadable QR codes</span>
 					</div>
 				</motion.div>
 			</div>
