@@ -19,7 +19,7 @@ from starlette.requests import Request
 
 _RESERVED_PATH_SEGMENTS = {
     "api", "docs", "redoc", "openapi.json",
-    "assets", "favicon.ico", "favicon.svg", "icons.svg",
+    "assets", "favicon.ico", "favicon.svg",
 }
 
 

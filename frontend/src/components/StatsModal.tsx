@@ -53,10 +53,9 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
     }
   };
 
-  // Reload analytics when the modal opens or the range changes; abort the
-  // in-flight request when the modal closes or reopens for another link.
+  // Reload analytics when range or reloadKey changes; abort in-flight request
+  // when component unmounts or re-queries for another link.
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     requestRef.current?.abort();
     requestRef.current = controller;

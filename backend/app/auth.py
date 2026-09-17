@@ -38,14 +38,6 @@ def _derive_issuer() -> str:
     )
 
 
-def _expected_issuer() -> str:
-    """Return the issuer URL a Clerk JWT must carry in its ``iss`` claim.
-
-    Same source of truth as the JWKS URL derivation.
-    """
-    return _derive_issuer()
-
-
 def _get_jwks_client() -> PyJWKClient:
     global _CLERK_JWKS_CLIENT
     if _CLERK_JWKS_CLIENT is None:
@@ -63,7 +55,7 @@ def verify_clerk_token(token: str) -> str | None:
     try:
         # Derived inside the try: with no Clerk env vars configured this
         # raises RuntimeError, swallowed below -> graceful None.
-        expected_issuer = _expected_issuer()
+        expected_issuer = _derive_issuer()
         jwks_client = _get_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         payload = jwt.decode(

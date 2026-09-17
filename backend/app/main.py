@@ -74,7 +74,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -141,7 +141,6 @@ RESERVED_ALIASES = {
     "openapi.json",
     "favicon.ico",
     "favicon.svg",
-    "icons.svg",
     "recent",
     "shorten",
     "stats",
@@ -254,19 +253,6 @@ async def serve_favicon():
             headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
         )
     raise HTTPException(status_code=404, detail="Favicon not found")
-
-
-@app.api_route("/icons.svg", methods=["GET", "HEAD"])
-async def serve_icons():
-    """Serve the icons sprite from the frontend dist directory."""
-    icons_path = os.path.join(STATIC_DIR, "icons.svg")
-    if os.path.isfile(icons_path):
-        return FileResponse(
-            icons_path,
-            media_type="image/svg+xml",
-            headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
-        )
-    raise HTTPException(status_code=404, detail="Icons not found")
 
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
