@@ -228,7 +228,7 @@ def _parse_date(date_str: str | None) -> datetime | None:
 # ─── Routes ──────────────────────────────────────────────
 
 
-@app.get("/assets/{file_path:path}")
+@app.api_route("/assets/{file_path:path}", methods=["GET", "HEAD"])
 async def serve_assets(file_path: str):
     """Serve static assets (path-traversal safe)."""
     asset_path = os.path.realpath(os.path.join(ASSETS_DIR, file_path))
@@ -236,29 +236,40 @@ async def serve_assets(file_path: str):
     if not asset_path.startswith(assets_root + os.sep) and asset_path != assets_root:
         raise HTTPException(status_code=403, detail="Forbidden")
     if os.path.isfile(asset_path):
-        return FileResponse(asset_path)
+        return FileResponse(
+            asset_path,
+            headers={"Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable"},
+        )
     raise HTTPException(status_code=404, detail="Asset not found")
 
 
-@app.get("/favicon.svg")
+@app.api_route("/favicon.svg", methods=["GET", "HEAD"])
 async def serve_favicon():
     """Serve the favicon from the frontend dist directory."""
     favicon_path = os.path.join(STATIC_DIR, "favicon.svg")
     if os.path.isfile(favicon_path):
-        return FileResponse(favicon_path, media_type="image/svg+xml")
+        return FileResponse(
+            favicon_path,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+        )
     raise HTTPException(status_code=404, detail="Favicon not found")
 
 
-@app.get("/icons.svg")
+@app.api_route("/icons.svg", methods=["GET", "HEAD"])
 async def serve_icons():
     """Serve the icons sprite from the frontend dist directory."""
     icons_path = os.path.join(STATIC_DIR, "icons.svg")
     if os.path.isfile(icons_path):
-        return FileResponse(icons_path, media_type="image/svg+xml")
+        return FileResponse(
+            icons_path,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+        )
     raise HTTPException(status_code=404, detail="Icons not found")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def serve_frontend():
     """Serve the frontend HTML page."""
     index_path = os.path.join(STATIC_DIR, "index.html")
@@ -271,7 +282,10 @@ async def serve_frontend():
             ),
             status_code=503,
         )
-    return FileResponse(index_path)
+    return FileResponse(
+        index_path,
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.post("/api/shorten", response_model=schemas.URLResponse)
@@ -590,7 +604,7 @@ async def get_qr_code(
 
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health_check(db: Session = Depends(get_db)):
     """Health check with DB connectivity verification.
 

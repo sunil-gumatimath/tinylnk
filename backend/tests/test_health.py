@@ -62,3 +62,14 @@ class TestHealthCheck:
 
         assert response.status_code == 503
         assert response.json() == {"status": "error", "database": "disconnected"}
+
+    def test_health_supports_head_method(self, client: TestClient):
+        """Health endpoint responds to HTTP HEAD probes (e.g. uptime monitors)."""
+        response = client.head("/api/health")
+        assert response.status_code == 200
+        assert "content-type" in response.headers
+
+    def test_root_supports_head_method(self, client: TestClient):
+        """Root endpoint responds to HTTP HEAD probes without 405."""
+        response = client.head("/")
+        assert response.status_code in (200, 503)
