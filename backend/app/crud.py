@@ -34,16 +34,12 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
     """Create a new shortened URL entry."""
     expires_at = None
     if url_data.expires_in_hours:
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            hours=url_data.expires_in_hours
-        )
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=url_data.expires_in_hours)
 
     # Validate custom_alias uniqueness upfront
     if url_data.custom_alias:
         existing = (
-            db.query(models.URL)
-            .filter(models.URL.custom_alias == url_data.custom_alias)
-            .first()
+            db.query(models.URL).filter(models.URL.custom_alias == url_data.custom_alias).first()
         )
         if existing:
             raise ValueError("This alias is already taken.")
@@ -99,11 +95,7 @@ def update_url(
             url.custom_alias = None
         elif alias != url.custom_alias:
             # Check uniqueness (skip if same as current)
-            existing = (
-                db.query(models.URL)
-                .filter(models.URL.custom_alias == alias)
-                .first()
-            )
+            existing = db.query(models.URL).filter(models.URL.custom_alias == alias).first()
             if existing and existing.id != url.id:
                 raise ValueError("This alias is already taken.")
             url.custom_alias = alias
@@ -116,9 +108,7 @@ def update_url(
             url.expires_at = None  # 0 = clear expiration (UPDATE-only affordance;
             # the schema enforces ge=0 here vs ge=1 on create)
         else:
-            url.expires_at = datetime.now(timezone.utc) + timedelta(
-                hours=data.expires_in_hours
-            )
+            url.expires_at = datetime.now(timezone.utc) + timedelta(hours=data.expires_in_hours)
 
     if data.max_clicks is not None:
         # 0 (or negative) is the explicit "remove the click limit" sentinel.
@@ -163,9 +153,7 @@ def record_click(
     """Record a click event and increment the counter atomically."""
     # Atomic increment — avoids race conditions and works on any session state
     db.execute(
-        _sa_text(
-            "UPDATE urls SET click_count = click_count + 1 WHERE id = :url_id"
-        ),
+        _sa_text("UPDATE urls SET click_count = click_count + 1 WHERE id = :url_id"),
         {"url_id": url.id},
     )
     click = models.ClickEvent(
@@ -197,9 +185,7 @@ def get_url_stats(
 
     base = _filtered_clicks_query(db, url.id, start_date, end_date)
 
-    total_clicks = (
-        base.with_entities(_sa_func.count(models.ClickEvent.id)).scalar() or 0
-    )
+    total_clicks = base.with_entities(_sa_func.count(models.ClickEvent.id)).scalar() or 0
 
     date_rows = (
         base.with_entities(
@@ -252,9 +238,7 @@ def get_url_stats(
         os_dict[os_name] += n
 
     recent_clicks = []
-    for click in (
-        base.order_by(models.ClickEvent.clicked_at.desc()).limit(recent_limit).all()
-    ):
+    for click in base.order_by(models.ClickEvent.clicked_at.desc()).limit(recent_limit).all():
         browser, os_name = ua_cache.get(click.user_agent, ("Unknown", "Unknown"))
         recent_clicks.append(
             {
@@ -314,13 +298,15 @@ def export_stats_csv(
             os_name = ua.os.family
 
         clicked_at = _ensure_utc(click.clicked_at)
-        writer.writerow([
-            clicked_at.isoformat() if clicked_at else "",
-            click.referrer or "Direct",
-            browser,
-            os_name,
-            click.ip_address or "",
-        ])
+        writer.writerow(
+            [
+                clicked_at.isoformat() if clicked_at else "",
+                click.referrer or "Direct",
+                browser,
+                os_name,
+                click.ip_address or "",
+            ]
+        )
 
     return buf.getvalue()
 
@@ -337,11 +323,7 @@ def get_recent_urls(
     if search:
         # Escape LIKE wildcards so user-supplied %, _, and \ are matched
         # literally instead of widening the search.
-        escaped = (
-            search.replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"
         query = query.filter(
             models.URL.original_url.ilike(pattern, escape="\\")
