@@ -18,12 +18,18 @@ _CLERK_JWKS_CLIENT: PyJWKClient | None = None
 
 
 def _derive_issuer() -> str:
-    """Derive Clerk issuer URL from CLERK_PUBLISHABLE_KEY or env."""
-    explicit = os.environ.get("CLERK_ISSUER")
+    """Derive Clerk issuer URL from CLERK_PUBLISHABLE_KEY, VITE_CLERK_PUBLISHABLE_KEY, or env."""
+    explicit = (os.environ.get("CLERK_ISSUER") or "").strip().strip('"').strip("'")
     if explicit:
-        return explicit.rstrip("/")
+        explicit = explicit.removesuffix("/.well-known/jwks.json").rstrip("/")
+        if explicit.startswith(("http://", "https://")):
+            return explicit
 
-    pk = os.environ.get("CLERK_PUBLISHABLE_KEY", "")
+    pk = (
+        os.environ.get("CLERK_PUBLISHABLE_KEY")
+        or os.environ.get("VITE_CLERK_PUBLISHABLE_KEY")
+        or ""
+    ).strip().strip('"').strip("'")
     if pk.startswith("pk_"):
         b64 = pk.split("_", 2)[-1]
         padded = b64 + "=" * (4 - len(b64) % 4)
@@ -34,7 +40,8 @@ def _derive_issuer() -> str:
             pass
 
     raise RuntimeError(
-        "Clerk issuer unknown. Set CLERK_ISSUER or CLERK_PUBLISHABLE_KEY."
+        "Clerk issuer unknown. Set CLERK_ISSUER, "
+        "CLERK_PUBLISHABLE_KEY, or VITE_CLERK_PUBLISHABLE_KEY."
     )
 
 
@@ -42,7 +49,8 @@ def _get_jwks_client() -> PyJWKClient:
     global _CLERK_JWKS_CLIENT
     if _CLERK_JWKS_CLIENT is None:
         issuer = _derive_issuer()
-        _CLERK_JWKS_CLIENT = PyJWKClient(f"{issuer}/.well-known/jwks.json")
+        jwks_url = f"{issuer}/.well-known/jwks.json"
+        _CLERK_JWKS_CLIENT = PyJWKClient(jwks_url, headers={"User-Agent": "tinylnk/1.0"})
     return _CLERK_JWKS_CLIENT
 
 

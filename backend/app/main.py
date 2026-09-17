@@ -592,18 +592,17 @@ async def get_qr_code(
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health_check(db: Session = Depends(get_db)):
-    """Health check with DB connectivity verification.
-
-    Returns 503 when the database is unreachable so that Docker HEALTHCHECK
-    and load-balancer probes actually detect the failure.
-    """
+    """Health check with DB connectivity verification."""
     try:
         db.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
         db_ok = False
-    body = {"status": "ok" if db_ok else "error",
-            "database": "connected" if db_ok else "disconnected"}
+
+    body = {
+        "status": "ok" if db_ok else "error",
+        "database": "connected" if db_ok else "disconnected",
+    }
     if not db_ok:
         return JSONResponse(status_code=503, content=body)
     return body
