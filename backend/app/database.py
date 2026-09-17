@@ -47,7 +47,9 @@ else:
         cursor.execute("PRAGMA synchronous = NORMAL;")
         cursor.close()
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 class Base(DeclarativeBase):
     pass
@@ -60,4 +62,3 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-
