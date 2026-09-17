@@ -1,4 +1,4 @@
-fastapi==0.115.0
+fastapi==0.141.1
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.35
 psycopg[binary]>=3.2,<4  # PostgreSQL driver — required when DATABASE_URL is set (Neon/Vercel)
