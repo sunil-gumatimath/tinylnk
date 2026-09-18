@@ -149,13 +149,29 @@ def record_click(
     referrer: str | None = None,
     user_agent: str | None = None,
     ip_address: str | None = None,
-) -> None:
-    """Record a click event and increment the counter atomically."""
-    # Atomic increment — avoids race conditions and works on any session state
-    db.execute(
-        _sa_text("UPDATE urls SET click_count = click_count + 1 WHERE id = :url_id"),
+) -> bool:
+    """Atomically claim and record a click without exceeding the link's limit.
+
+    Returns ``False`` when another request has already consumed the last
+    available click. The limit must be part of the UPDATE predicate: checking
+    the ORM object first is racy when concurrent redirects use separate Neon
+    connections.
+    """
+    result = db.execute(
+        _sa_text(
+            """
+            UPDATE urls
+            SET click_count = click_count + 1
+            WHERE id = :url_id
+              AND (max_clicks IS NULL OR click_count < max_clicks)
+            """
+        ),
         {"url_id": url.id},
     )
+    if result.rowcount != 1:
+        db.rollback()
+        return False
+
     click = models.ClickEvent(
         url_id=url.id,
         referrer=referrer,
@@ -164,6 +180,7 @@ def record_click(
     )
     db.add(click)
     db.commit()
+    return True
 
 
 def get_url_stats(

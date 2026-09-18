@@ -332,6 +332,20 @@ class TestDeleteUrl:
         crud.delete_url(db_session, url.short_code)
         assert db_session.query(models.ClickEvent).count() == 0
 
+    def test_record_click_does_not_exceed_limit(self, db_session: Session):
+        """The database update enforces max_clicks even with a stale ORM row."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/limited", max_clicks=1),
+        )
+
+        assert crud.record_click(db_session, url) is True
+        assert crud.record_click(db_session, url) is False
+
+        db_session.refresh(url)
+        assert url.click_count == 1
+        assert db_session.query(models.ClickEvent).filter_by(url_id=url.id).count() == 1
+
 
 # ---------------------------------------------------------------------------
 # is_url_expired

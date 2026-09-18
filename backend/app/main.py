@@ -536,7 +536,7 @@ async def redirect_to_url(
 
     try:
         # Record click (IP is anonymized before storage)
-        crud.record_click(
+        click_recorded = crud.record_click(
             db,
             url,
             referrer=request.headers.get("referer"),
@@ -546,6 +546,12 @@ async def redirect_to_url(
     except Exception:
         logging.exception("Failed to record click")
         # Still redirect even if analytics recording fails
+        click_recorded = None
+
+    # A concurrent redirect may have consumed the final allowed click after the
+    # ORM row was read. In that case the guarded UPDATE declines this request.
+    if click_recorded is False:
+        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
 
     # Optionally show an interstitial warning page before redirecting
     if REDIRECT_WARNING:
