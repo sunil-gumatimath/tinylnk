@@ -1,7 +1,8 @@
 # tinylnk — Production Deployment
 
-This directory contains configuration files and guides for running tinylnk
-in production.
+This directory covers persistent, self-hosted SQLite deployments using Docker
+or a native process. For the serverless Vercel and Neon PostgreSQL deployment,
+see [Deploy to Vercel with Neon](../README.md#deploy-to-vercel-with-neon).
 
 ## Architecture
 
@@ -150,7 +151,8 @@ pytest tests/ -v
 
 ## Monitoring
 
-- **Health check:** `GET /api/health` → `{"status": "ok"}`
+- **Health check:** `GET /api/health` →
+  `{"status":"ok","database":"connected"}`
 - **Logs:** Set `LOG_FORMAT=json` for JSON-structured logs (ingest with
   Loki, Datadog, CloudWatch, etc.)
 - **Error tracking:** Set `SENTRY_DSN` to enable Sentry exception tracking

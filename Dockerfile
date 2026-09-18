@@ -1,4 +1,4 @@
-FROM python:3.10-slim AS builder
+FROM python:3.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -18,10 +18,10 @@ ENV PATH="/root/.bun/bin:$PATH"
 COPY backend/requirements.txt backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Copy frontend manifest and install dependencies
-COPY frontend/package.json frontend/
+# Copy frontend manifests and install the exact locked dependencies
+COPY frontend/package.json frontend/bun.lock frontend/
 WORKDIR /app/frontend
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # Copy source code
 WORKDIR /app
@@ -38,7 +38,7 @@ WORKDIR /app/frontend
 RUN bun run build
 
 # Start production image
-FROM python:3.10-slim
+FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 
@@ -49,7 +49,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Copy python packages
-COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 
 # Copy backend and frontend build

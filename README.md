@@ -3,13 +3,16 @@
 > A self-hosted, full-stack URL shortener with built-in analytics, link management, and a polished dashboard.
 
 ![Open Source](https://img.shields.io/badge/Open%20Source-Free%20to%20use-brightgreen.svg)
-![Python](https://img.shields.io/badge/python-3.10+-green.svg)
+![Python](https://img.shields.io/badge/python-3.12-green.svg)
 ![React](https://img.shields.io/badge/react-19-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)
 
 ## Overview
 
-tinylnk converts long URLs into short, shareable links with detailed click analytics. Built with FastAPI and React, it runs as a single self-contained service and stores its data in SQLite; no external service is required.
+tinylnk converts long URLs into short, shareable links with detailed click
+analytics. FastAPI serves the API and the compiled React application from one
+origin. Local and self-hosted installations default to SQLite, while serverless
+Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 
 ## Features
 
@@ -51,11 +54,12 @@ tinylnk converts long URLs into short, shareable links with detailed click analy
 
 | Layer | Technology |
 | --- | --- |
-| **Backend** | FastAPI, SQLAlchemy, Uvicorn, SlowAPI |
-| **Database** | SQLite |
+| **Backend** | Python 3.12, FastAPI, SQLAlchemy, Uvicorn, SlowAPI |
+| **Database** | SQLite (local/Docker) or PostgreSQL (Neon/Vercel) |
 | **Frontend** | React 19, TypeScript, Vite |
 | **UI** | Ant Design 6, Recharts, Lucide Icons, Framer Motion |
-| **Deployment** | Docker, Docker Compose |
+| **Authentication** | Clerk session JWTs verified through public JWKS |
+| **Deployment** | Vercel, Docker, Docker Compose |
 
 ## Quick Start
 
@@ -64,35 +68,79 @@ tinylnk converts long URLs into short, shareable links with detailed click analy
 ```bash
 git clone https://github.com/sunil-gumatimath/tinylnk.git
 cd tinylnk
-docker-compose up -d
+cp .env.example .env
+docker compose up -d --build
 ```
 
 Visit `http://localhost:8000` in your browser.
 
-To enable sign-in, copy `.env.example` to `.env` and set
-`VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_ISSUER`, then rebuild with
-`docker-compose up -d --build` — the publishable key is baked into the frontend
-bundle at build time. See [Configuration](#configuration).
+The default uses the persistent SQLite file `./data/urlshortener.db`. To enable
+sign-in, set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_ISSUER` in `.env`, then
+rebuild with `docker compose up -d --build`; the browser key is embedded in the
+frontend bundle at build time. See [Configuration](#configuration).
 
 ### Manual Setup
 
-**Backend:**
+Requirements: Python 3.12 and [Bun](https://bun.sh/). The repository also
+includes a locked [uv](https://docs.astral.sh/uv/) environment; `pip` remains
+supported through `backend/requirements.txt`.
+
+**Backend** (from the repository root):
 
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cp .env.example .env
+python -m venv .venv
+# Activate .venv for your shell, then:
+python -m pip install -r backend/requirements.txt
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Frontend:**
+**Frontend** (in a second terminal):
 
 ```bash
 cd frontend
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
-The dev server proxies API requests to the backend automatically.
+Open `http://localhost:5173`. Vite proxies `/api` requests to the backend at
+`http://127.0.0.1:8000`.
+
+## Deploy to Vercel with Neon
+
+Vercel runs the FastAPI application declared by `[tool.vercel]` in
+`pyproject.toml`, builds `frontend/dist`, and serves the frontend and API from
+the same deployment. Vercel's filesystem is ephemeral, so production
+deployments deliberately refuse to fall back to SQLite.
+
+1. Create a Neon PostgreSQL database. Copy its pooled connection string; it
+   should look like `postgresql://user:password@host/database?sslmode=require`.
+2. Import this repository into Vercel.
+3. Add `DATABASE_URL` in Vercel Project Settings for Production and every
+   Preview environment that should boot successfully.
+4. For sign-in, add a matching production Clerk configuration:
+   - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_...`
+   - `CLERK_ISSUER=https://your-production-clerk-issuer`
+5. Deploy. The application creates its current tables and schema-version row
+   when the FastAPI function starts.
+6. Verify both layers:
+
+   ```bash
+   curl -i https://your-domain.example/
+   curl -i https://your-domain.example/api/health
+   ```
+
+   A healthy database response is:
+
+   ```json
+   {"status":"ok","database":"connected"}
+   ```
+
+> [!IMPORTANT]
+> `VITE_CLERK_PUBLISHABLE_KEY` is a build-time value. Changing it requires a
+> redeploy. Use a `pk_live_...` key with the matching production issuer; mixing
+> test and production Clerk instances causes sign-in or token validation
+> failures.
 
 ## API Reference
 
@@ -200,8 +248,8 @@ Copy `.env.example` to `.env` and customise:
 
 | Environment Variable | Default | Description |
 | --- | --- | --- |
-| `SQLITE_DB_PATH` | `urlshortener.db` | Path to the SQLite database file |
-| `TINYLNK_ADMIN_KEY` | *(empty)* | **Deprecated.** This setting has no effect — authentication is handled exclusively by Clerk JWT. Remove it from your configuration. |
+| `DATABASE_URL` | *(empty)* | PostgreSQL connection URL. Required on Vercel; when set, it takes precedence over `SQLITE_DB_PATH`. Neon `postgresql://` URLs are accepted and use psycopg 3. |
+| `SQLITE_DB_PATH` | `urlshortener.db` | Local SQLite path, resolved relative to the repository root. Docker overrides it with `/app/data/urlshortener.db`. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
 | `TINYLNK_ENABLE_DOCS` | `false` | Expose the OpenAPI schema and Swagger UI at `/openapi.json` and `/docs` |
@@ -212,8 +260,8 @@ Copy `.env.example` to `.env` and customise:
 | `CLERK_ISSUER` | *(empty)* | Expected `iss` claim of incoming Clerk JWTs. The backend fetches signing keys from `<CLERK_ISSUER>/.well-known/jwks.json`. |
 | `CLERK_PUBLISHABLE_KEY` | *(empty)* | Optional backend fallback: the issuer is derived from this key when `CLERK_ISSUER` is unset. |
 
-> `CLERK_SECRET_KEY` is **not** used by tinylnk — tokens are verified against
-> Clerk's public JWKS, so no secret key is required.
+`TINYLNK_ADMIN_KEY` is no longer supported. `CLERK_SECRET_KEY` is also not used:
+tokens are verified against Clerk's public JWKS, so no secret key is required.
 
 #### Authentication Flow
 
@@ -234,7 +282,7 @@ tinylnk/
 │   │   ├── models.py        # SQLAlchemy models + schema versioning
 │   │   ├── schemas.py       # Pydantic request/response schemas
 │   │   ├── crud.py          # Database CRUD operations
-│   │   ├── database.py      # Engine, WAL pragmas & session
+│   │   ├── database.py      # SQLite/PostgreSQL engine and sessions
 │   │   ├── logging_config.py # Structured logging middleware
 │   │   └── utils.py         # URL validation & IP anonymization
 │   ├── tests/               # Pytest suite
@@ -257,6 +305,8 @@ tinylnk/
 ├── deploy/                  # Deployment notes and Caddyfile
 ├── Dockerfile
 ├── docker-compose.yml
+├── pyproject.toml            # Python package, Vercel entrypoint, Ruff config
+├── vercel.json               # Frontend output and cache headers
 └── README.md
 ```
 
@@ -264,13 +314,18 @@ tinylnk/
 
 - **Short Code Generation** — Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
-- **Database** — Single SQLite file with WAL mode and a 5s busy-timeout, so readers never block on writes. It is still a **single-writer** store: fine for personal and small-team use, not for high-concurrency workloads (which would need Postgres). A `schema_version` row is stamped at startup so stale database files fail loudly.
-- **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics are stored locally; tinylnk does not include third-party tracking.
+- **Database Selection** — `DATABASE_URL` selects PostgreSQL through psycopg 3; otherwise the app uses SQLite. Vercel requires `DATABASE_URL`, while local and Docker installations can remain self-contained with SQLite.
+- **SQLite Concurrency** — WAL mode and a 5s busy-timeout keep readers responsive, but SQLite remains a single-writer store. Use PostgreSQL for serverless or higher-concurrency deployments.
+- **Neon Connections** — PostgreSQL connections use `NullPool`, allowing Neon's pooler to own connection reuse instead of retaining idle connections across serverless invocations.
+- **Schema Bootstrap** — SQLAlchemy creates missing tables and stamps schema version `1` at startup. There is currently no Alembic migration workflow; future schema changes require an explicit migration before increasing the version.
+- **Click Limits** — The counter and limit check are performed in one database update, so concurrent redirects cannot consume more clicks than configured.
+- **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics stay in the configured SQLite or PostgreSQL database; tinylnk does not include third-party tracking.
 - **Rate Limiting** — SlowAPI limits sensitive endpoints: shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), tag listing (60/min), CSV export (30/min), redirects (60/min), deletion (20/min), and QR generation (30/min).
 
 ## Backups
 
-`scripts/backup.sh` (and `backup.ps1` on Windows) snapshots the SQLite file on a loop with retention pruning:
+The bundled backup and restore scripts apply only to SQLite installations.
+They snapshot the database file on a loop with retention pruning:
 
 ```bash
 # Nightly backup via cron (host machine, Docker setup)
@@ -291,6 +346,47 @@ backup:
 ```
 
 Restore with `scripts/restore.sh <backup-file>` (stops writers first — see the script header).
+
+For Neon/PostgreSQL, use Neon restore points, branches, or `pg_dump`; do not run
+the SQLite backup scripts against `DATABASE_URL`.
+
+## Testing and Quality Checks
+
+Install the locked application and development dependencies with `uv sync
+--dev`, then run:
+
+```bash
+# Backend unit/integration tests
+uv run python -m pytest backend/tests -q
+
+# Full local HTTP contract, including a temporary JWKS server
+uv run python scripts/e2e_contract_check.py
+
+# Backend lint
+uv run ruff check backend
+
+# Frontend tests, lint, type-check, and production build
+cd frontend
+bun test
+bun run lint
+bun run build
+```
+
+GitHub Actions runs backend/frontend linting, the backend test suite, the
+frontend production build, and a Docker health check on pushes and pull
+requests to `main`. Tags matching `v*` build and publish a container image to
+GitHub Container Registry.
+
+## Production Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Deployment fails during import/startup | Confirm `DATABASE_URL` exists in the affected Vercel environment and is a PostgreSQL URL. |
+| `/api/health` returns `503` | Check Neon availability, connection-string credentials, `sslmode`, and whether the Neon project is suspended. |
+| Frontend loads but API calls fail | Request `/api/health` directly, inspect Vercel function logs, and confirm the deployment includes both the Python entrypoint and `frontend/dist`. |
+| Sign-in succeeds but management calls return `401` | Ensure the frontend key and `CLERK_ISSUER` belong to the same Clerk instance; redeploy after changing `VITE_CLERK_PUBLISHABLE_KEY`. |
+| Docker Compose reports a missing env file | Copy `.env.example` to `.env` before starting the service. |
+| Existing database is rejected at startup | Its `schema_version` differs from the code. Migrate it explicitly; do not delete production data. |
 
 ## Security
 
