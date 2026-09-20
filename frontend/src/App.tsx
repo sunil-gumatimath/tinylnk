@@ -10,17 +10,18 @@ import {
 	Input,
 	Layout,
 	Select,
+	Skeleton,
 	Spin,
 	Typography,
 } from "antd";
-import { FolderOpen, LogIn, RefreshCw, Search, Sun, Moon } from "lucide-react";
+import { Activity, FolderOpen, Link2, LogIn, MousePointerClick, RefreshCw, Search, Sun, Moon } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { Hero } from "./components/Hero";
 import { LinkCard } from "./components/LinkCard";
 import { EditModal } from "./components/EditModal";
 import { QrModal } from "./components/QrModal";
 import { ShortenerForm } from "./components/ShortenerForm";
-import { errorText, normalizeUrl, readJson, resolveExpiry, validateDestination } from "./ui";
+import { errorText, linkStatus, normalizeUrl, readJson, resolveExpiry, validateDestination } from "./ui";
 
 const StatsModal = lazy(() => import("./components/StatsModal"));
 import type { EditFormValues } from "./components/EditModal";
@@ -91,6 +92,16 @@ function App() {
 				record.short_url || `${currentHost}/${record.short_code}`,
 		[currentHost],
 	);
+
+	const dashboardStats = useMemo(() => {
+		let clicks = 0;
+		let active = 0;
+		for (const link of recentLinks) {
+			clicks += link.click_count;
+			if (linkStatus(link) === "Active") active += 1;
+		}
+		return { total: recentLinks.length, clicks, active };
+	}, [recentLinks]);
 
 	/** Auth headers for admin-protected requests: Clerk JWT only. */
 	const authHeaders = async (): Promise<Record<string, string>> => {
@@ -421,6 +432,7 @@ function App() {
 									<div className="empty-state panel-surface">
 										<LogIn size={44} />
 										<Title level={4}>Manage this server’s links</Title>
+
 										<Paragraph className="dashboard-subtitle">
 											You can create a short link without signing in. Authorized users can sign in to edit links and view click analytics.
 										</Paragraph>
@@ -438,11 +450,18 @@ function App() {
 								>
 									<div className="dashboard-header">
 										<div className="dashboard-header-info">
-											<Title level={2} className="dashboard-title">
-												Dashboard
-											</Title>
+											<div className="dashboard-title-row">
+												<Title level={3} className="dashboard-title">
+													Dashboard
+												</Title>
+												{linksLoaded && !linksError ? (
+													<span className="dashboard-count">
+														{dashboardStats.total}{hasMoreLinks ? "+" : ""} {dashboardStats.total === 1 ? "link" : "links"}
+													</span>
+												) : null}
+											</div>
 											<Paragraph className="dashboard-subtitle">
-												View recent links on this server, edit destinations, and explore click analytics.
+												Track performance, edit destinations, and explore click analytics.
 											</Paragraph>
 										</div>
 										<Button
@@ -452,6 +471,30 @@ function App() {
 										>
 											Refresh
 										</Button>
+									</div>
+
+									<div className="dash-kpi-strip">
+										<div className="dash-kpi panel-surface">
+											<span className="dash-kpi-icon"><Link2 size={17} /></span>
+											<div>
+												<strong>{linksLoaded ? dashboardStats.total : "?"}{hasMoreLinks ? "+" : ""}</strong>
+												<span>Links loaded</span>
+											</div>
+										</div>
+										<div className="dash-kpi panel-surface">
+											<span className="dash-kpi-icon"><MousePointerClick size={17} /></span>
+											<div>
+												<strong>{linksLoaded ? dashboardStats.clicks.toLocaleString() : "?"}</strong>
+												<span>Total clicks</span>
+											</div>
+										</div>
+										<div className="dash-kpi panel-surface">
+											<span className="dash-kpi-icon"><Activity size={17} /></span>
+											<div>
+												<strong>{linksLoaded ? dashboardStats.active.toLocaleString() : "?"}</strong>
+												<span>Active now</span>
+											</div>
+										</div>
 									</div>
 
 									<motion.div className="search-toolbar" layout>
@@ -464,11 +507,11 @@ function App() {
 											allowClear
 											className="search-input"
 										/>
-										{(availableTags.length > 0 || filterTag) && (
-											<Select
-												placeholder="Filter by tag"
+										<Select
+												placeholder={availableTags.length > 0 ? "Filter by tag" : "No tags yet"}
 												aria-label="Filter links by tag"
 												allowClear
+												disabled={availableTags.length === 0 && !filterTag}
 												className="tag-filter"
 												value={filterTag}
 												onChange={(value) => setFilterTag(value ?? null)}
@@ -477,12 +520,15 @@ function App() {
 													label: tag,
 												}))}
 											/>
-										)}
 									</motion.div>
 
-									{tableLoading || !linksLoaded ? (
-										<div className="table-loading" role="status">
-											<Spin size="large" /><span>Loading links…</span>
+									{!linksLoaded ? (
+										<div className="links-grid" aria-label="Loading links" role="status">
+											{Array.from({ length: 6 }).map((_, i) => (
+											<div key={i} className="link-card panel-surface">
+												<Skeleton active title={{ width: "55%" }} paragraph={{ rows: 3 }} />
+											</div>
+										))}
 										</div>
 									) : linksError ? (
 										<Alert type="error" showIcon title="Could not load links" description={linksError}
@@ -498,8 +544,9 @@ function App() {
 											}}>{searchQuery || filterTag ? "Clear filters" : "Create a link"}</Button>
 										</div>
 									) : (
-										<div className="links-grid">
-											<AnimatePresence mode="popLayout">
+										<>
+												<div className={`links-grid${tableLoading ? " is-updating" : ""}`}>
+													<AnimatePresence mode="popLayout">
 												{recentLinks.map((link, index) => (
 													<motion.div
 														key={link.short_code}
@@ -526,14 +573,18 @@ function App() {
 													</motion.div>
 												))}
 											</AnimatePresence>
-											{hasMoreLinks ? (
-												<div className="links-more">
-													<Button onClick={loadMoreLinks} loading={tableLoading}>
-														Load more links
-													</Button>
+											</div>
+												<div className="links-footer">
+													<span className="links-count">
+														Showing {recentLinks.length} links{tableLoading ? " \u00b7 Updating\u2026" : ""}
+													</span>
+													{hasMoreLinks ? (
+														<Button onClick={loadMoreLinks} loading={tableLoading}>
+															Load more links
+														</Button>
+													) : null}
 												</div>
-											) : null}
-										</div>
+											</>
 									)}
 								</motion.section>
 							)}

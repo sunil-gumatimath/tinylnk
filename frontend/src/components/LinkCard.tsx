@@ -1,6 +1,19 @@
 import { useState } from 'react';
-import { Button, Popconfirm, Tag } from 'antd';
-import { BarChart2, Calendar, Check, Copy, ExternalLink, Pencil, QrCode, Share2, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { Button, Popconfirm, Tag, Tooltip } from 'antd';
+import {
+  BarChart2,
+  Calendar,
+  Check,
+  Clock,
+  Copy,
+  ExternalLink,
+  MousePointerClick,
+  Pencil,
+  QrCode,
+  Share2,
+  Tag as TagIcon,
+  Trash2,
+} from 'lucide-react';
 import type { ShortenedURL } from '../types';
 import { linkStatus } from '../ui';
 
@@ -20,100 +33,159 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
   const status = linkStatus(record);
   const statusClass =
     status === 'Expired' ? 'status-expired' : status === 'Click limit reached' ? 'status-limit' : 'status-active';
+  const shortUrl = getShortUrl(record);
+  const progress =
+    record.max_clicks && record.max_clicks > 0
+      ? Math.min(100, Math.round((record.click_count / record.max_clicks) * 100))
+      : null;
+
+  const createdLabel = new Date(record.created_at).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const expiryLabel = record.expires_at
+    ? new Date(record.expires_at).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : null;
 
   const handleCopyClick = async () => {
-    const succeeded = await onCopy(getShortUrl(record));
+    const succeeded = await onCopy(shortUrl);
     setCopied(succeeded);
     if (succeeded) setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <article className="link-card panel-surface">
-      <div className="link-card-top">
-        <div className="link-copy">
-          <div className="link-short">
-            <a href={getShortUrl(record)} target="_blank" rel="noopener noreferrer">
-              {record.short_code}
-            </a>
-            <ExternalLink size={14} />
-          </div>
-          <p className="link-original truncate-text">{record.original_url}</p>
+      <div className="link-card-head">
+        <a
+          href={shortUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="link-short"
+          title={shortUrl}
+        >
+          <span className="link-short-code">{record.short_code}</span>
+          <ExternalLink size={13} className="link-short-icon" />
+        </a>
+        <div className="link-head-right">
+          <Tag bordered={false} className={`meta-tag status-tag ${statusClass}`}>
+            <span className="status-dot" aria-hidden />
+            {status === 'Click limit reached' ? 'Limit reached' : status}
+          </Tag>
+          <Tooltip title={copied ? 'Copied!' : 'Copy short link'}>
+            <Button
+              size="small"
+              onClick={handleCopyClick}
+              icon={copied ? <Check size={14} color="green" /> : <Copy size={14} />}
+              aria-label="Copy short link"
+              className="icon-btn"
+            />
+          </Tooltip>
         </div>
+      </div>
 
-        <div className="link-actions">
-          <Button
-            onClick={() => handleCopyClick()}
-            icon={copied ? <Check size={15} color="green" /> : <Copy size={15} />}
-            title="Copy link"
-            aria-label="Copy link"
-          />
-          <Button
-            onClick={() => onShowQr(record.short_code)}
-            icon={<QrCode size={15} />}
-            title="QR code"
-            aria-label="Show QR code"
-          />
-          <Button
-            onClick={() => onShowStats(record.short_code, getShortUrl(record))}
-            icon={<BarChart2 size={15} />}
-            title="Analytics"
-            aria-label="View analytics"
-          />
-          <Button
-            onClick={() => onEdit(record)}
-            icon={<Pencil size={15} />}
-            title="Edit"
-            aria-label="Edit link"
-          />
-          <Button
-            onClick={() => onShare(getShortUrl(record))}
-            icon={<Share2 size={15} />}
-            title="Share"
-            aria-label="Share link"
-          />
+      <p className="link-original truncate-text" title={record.original_url}>
+        {record.original_url}
+      </p>
+
+      <div className="link-stats">
+        <span className="link-stat">
+          <MousePointerClick size={13} />
+          <strong>{record.click_count}</strong>&nbsp;{record.click_count === 1 ? 'click' : 'clicks'}
+          {record.max_clicks ? <span className="link-stat-muted"> / {record.max_clicks}</span> : null}
+        </span>
+        <span className="link-stat link-stat-muted" title={new Date(record.created_at).toLocaleString()}>
+          <Calendar size={13} />
+          {createdLabel}
+        </span>
+        {record.tag ? (
+          <Tag bordered={false} className="meta-tag tag-pill">
+            <TagIcon size={11} />
+            <span className="truncate-text tag-pill-text">{record.tag}</span>
+          </Tag>
+        ) : null}
+      </div>
+
+      {progress !== null ? (
+        <div
+          className="click-progress"
+          role="progressbar"
+          aria-valuenow={record.click_count}
+          aria-valuemin={0}
+          aria-valuemax={record.max_clicks ?? 0}
+          title={`${record.click_count} of ${record.max_clicks} clicks used`}
+        >
+          <span style={{ width: `${progress}%` }} />
+        </div>
+      ) : null}
+
+      {expiryLabel ? (
+        <p className={`link-expiry ${status === 'Expired' ? 'is-expired' : ''}`}>
+          <Clock size={12} />
+          {status === 'Expired' ? `Expired ${expiryLabel}` : `Expires ${expiryLabel}`}
+        </p>
+      ) : null}
+
+      <div className="link-foot">
+        <Button
+          size="small"
+          onClick={() => onShowStats(record.short_code, shortUrl)}
+          icon={<BarChart2 size={14} />}
+          className="analytics-btn"
+        >
+          Analytics
+        </Button>
+        <div className="link-foot-icons">
+          <Tooltip title="QR code">
+            <Button
+              size="small"
+              onClick={() => onShowQr(record.short_code)}
+              icon={<QrCode size={14} />}
+              aria-label="Show QR code"
+              className="icon-btn"
+            />
+          </Tooltip>
+          <Tooltip title="Share">
+            <Button
+              size="small"
+              onClick={() => onShare(shortUrl)}
+              icon={<Share2 size={14} />}
+              aria-label="Share link"
+              className="icon-btn"
+            />
+          </Tooltip>
+          <Tooltip title="Edit">
+            <Button
+              size="small"
+              onClick={() => onEdit(record)}
+              icon={<Pencil size={14} />}
+              aria-label="Edit link"
+              className="icon-btn"
+            />
+          </Tooltip>
           <Popconfirm
             title="Delete this link?"
             description="The short link and its QR codes will stop working. Its analytics will be permanently deleted. This cannot be undone."
             okText="Delete link"
-            // The trigger is already a red/danger button — the confirm must be
-            // destructive too instead of AntD's default blue primary.
             okButtonProps={{ danger: true }}
             cancelText="Cancel"
             placement="topRight"
             onConfirm={() => onDelete(record.short_code)}
           >
             <Button
+              size="small"
               danger
-              icon={<Trash2 size={15} />}
-              title="Delete"
+              icon={<Trash2 size={14} />}
               aria-label="Delete link"
+              className="icon-btn"
             />
           </Popconfirm>
         </div>
-      </div>
-
-      <div className="link-meta">
-        <Tag bordered={false} className={`meta-tag status-tag ${statusClass}`}>
-          {status}
-        </Tag>
-        <Tag bordered={false} className="meta-tag">
-          {record.click_count} {record.click_count === 1 ? 'click' : 'clicks'}{record.max_clicks ? ` · limit ${record.max_clicks}` : ''}
-        </Tag>
-        <Tag bordered={false} className="meta-tag">
-          <Calendar size={12} />
-          Created {new Date(record.created_at).toLocaleDateString()}
-        </Tag>
-        {record.tag ? (
-          <Tag bordered={false} className="meta-tag">
-            <TagIcon size={12} />
-            {record.tag}
-          </Tag>
-        ) : null}
-        {record.expires_at ? (
-          <Tag bordered={false} className="meta-tag subtle-tag">
-            {status === 'Expired' ? 'Expired' : 'Expires'} {new Date(record.expires_at).toLocaleString()}
-          </Tag>
-        ) : null}
       </div>
     </article>
   );
