@@ -55,7 +55,13 @@ def _get_jwks_client() -> PyJWKClient:
     if _CLERK_JWKS_CLIENT is None:
         issuer = _derive_issuer()
         jwks_url = f"{issuer}/.well-known/jwks.json"
-        _CLERK_JWKS_CLIENT = PyJWKClient(jwks_url, headers={"User-Agent": "tinylnk/1.0"})
+        _CLERK_JWKS_CLIENT = PyJWKClient(
+            jwks_url,
+            cache_keys=True,
+            max_cached_keys=16,
+            lifespan=3600,
+            headers={"User-Agent": "tinylnk/1.0"},
+        )
     return _CLERK_JWKS_CLIENT
 
 

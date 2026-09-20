@@ -32,15 +32,21 @@ if DATABASE_URL.startswith(("postgres://", "postgresql://")):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
 
 if DATABASE_URL.startswith("postgresql+psycopg://"):
-    engine = create_engine(
-        DATABASE_URL,
-        # Neon handles pooling. Do not retain idle connections across function invocations.
-        poolclass=NullPool,
-        # prepare_threshold=None disables psycopg's automatic prepared statements,
-        # which Neon's pooled (PgBouncer transaction-mode) endpoint cannot reuse.
-        connect_args={"connect_timeout": 10, "prepare_threshold": None},
-        echo=False,
-    )
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    engine_kwargs: dict = {
+        "connect_args": {"connect_timeout": 10, "prepare_threshold": None},
+        "echo": False,
+    }
+    if is_serverless:
+        engine_kwargs["poolclass"] = NullPool
+    else:
+        # Persistent / local server: reuse connections to eliminate 3-5s TLS handshakes per query
+        engine_kwargs["pool_size"] = 5
+        engine_kwargs["max_overflow"] = 5
+        engine_kwargs["pool_recycle"] = 300
+        engine_kwargs["pool_pre_ping"] = False
+
+    engine = create_engine(DATABASE_URL, **engine_kwargs)
 elif TESTING and DATABASE_URL.startswith("sqlite://"):
     # Test-only backend (see module docstring). Never reachable in production.
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
