@@ -43,8 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    SQLITE_DB_PATH=/app/data/urlshortener.db
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -55,9 +54,6 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 # Copy backend and frontend build
 COPY --from=builder /app/backend /app/backend
 COPY --from=builder /app/frontend/dist /app/frontend/dist
-
-# Ensure data directory exists
-RUN mkdir -p /app/data && chown -R 1000:1000 /app/data
 
 # Run as non-root user
 USER 1000:1000
