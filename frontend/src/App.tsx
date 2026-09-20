@@ -54,6 +54,7 @@ function App() {
 	const [editError, setEditError] = useState<string | null>(null);
 	const [linksError, setLinksError] = useState<string | null>(null);
 	const linksRequest = useRef<AbortController | null>(null);
+	const isFirstMount = useRef(true);
 	const [recentLinks, setRecentLinks] = useState<ShortenedURL[]>([]);
 	const [result, setResult] = useState<ShortenedURL | null>(null);
 	const [showAdvanced, setShowAdvanced] = useState(false);
@@ -170,7 +171,7 @@ function App() {
 			setRecentLinks((prev) => (offset > 0 ? [...prev, ...data] : data));
 			setLinksOffset(offset + data.length);
 			setHasMoreLinks(data.length === LINKS_PAGE_SIZE);
-			await fetchTags(controller.signal);
+			fetchTags(controller.signal);
 		} catch (error) {
 			if (!controller.signal.aborted) setLinksError(errorText(error));
 		} finally {
@@ -339,15 +340,20 @@ function App() {
 			setRecentLinks([]);
 			setAvailableTags([]);
 			setLinksLoaded(false);
+			isFirstMount.current = true;
 			return;
 		}
 
 		linksRequest.current?.abort();
 		setTableLoading(true);
 		const controller = new AbortController();
+		// Instant fetch on mount or tag click; debounce only while actively typing a search query
+		const delay = isFirstMount.current || !searchQuery ? 0 : 300;
+		isFirstMount.current = false;
+
 		const timer = setTimeout(() => {
 			fetchRecentLinks(searchQuery, filterTag, controller.signal);
-		}, 300);
+		}, delay);
 
 		return () => {
 			clearTimeout(timer);
