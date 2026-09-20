@@ -44,8 +44,6 @@ if _backend not in sys.path:
 
 from sqlalchemy import inspect, text  # noqa: E402
 
-from app import models  # noqa: E402
-from app.database import DATABASE_URL, Base, SessionLocal, engine  # noqa: E402
 
 
 def _mask(url: str) -> str:
@@ -135,7 +133,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    target = args.database_url or DATABASE_URL
+    target = args.database_url or os.getenv("DATABASE_URL", "").strip()
+    if not target:
+        print("DATABASE_URL is required: pass --database-url or set DATABASE_URL in environment.")
+        return 1
+    os.environ["DATABASE_URL"] = target
+    from app import models  # noqa: E402
+    from app.database import Base, SessionLocal, engine  # noqa: E402
     print(f"Database: {_mask(target)}")
     print(f"Mode    : {'check only' if args.check else 'migrate + verify'}\n")
 

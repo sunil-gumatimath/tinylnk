@@ -33,7 +33,7 @@
         # Restrict browser features
         Permissions-Policy "geolocation=(), microphone=(), camera=()"
         # Content Security Policy
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.clerk.accounts.dev https://api.clerk.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
     }
 
@@ -71,7 +71,7 @@
 #         format json
 #     }
 #
-#     handle /health {
+#     handle /api/health {
 #         reverse_proxy app:8000
 #     }
 # }

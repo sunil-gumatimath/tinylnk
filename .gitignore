@@ -4,6 +4,7 @@ __pycache__/
 *.db-shm
 *.db-wal
 .env*
+!.env.example
 .venv/
 venv/
 *.egg-info/
@@ -53,4 +54,3 @@ yarn-error.log*
 bun.log
 
 .vercel
-.env*
