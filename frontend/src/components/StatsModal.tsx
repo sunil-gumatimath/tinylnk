@@ -91,7 +91,6 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
     }
   };
 
-  const dayjsValue = range;
 
   return (
     <Modal
@@ -145,7 +144,7 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
 
           <section className="stats-toolbar">
             <RangePicker
-              value={dayjsValue}
+              value={range}
               onChange={handleDateChange}
               style={{ borderRadius: 14 }}
               placeholder={['Start date', 'End date']}
@@ -187,7 +186,7 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
                     <Tooltip
                       contentStyle={{
                         background: 'var(--tooltip-bg)',
-                        border: '1px solid var(--tooltip-tooltip-border, var(--tooltip-border))',
+                        border: '1px solid var(--tooltip-border)',
                         borderRadius: 16,
                         color: 'var(--text)',
                       }}

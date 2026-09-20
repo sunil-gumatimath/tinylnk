@@ -5,10 +5,10 @@ import {
 	ChevronDown,
 	ChevronUp,
 	ExternalLink,
+	Link,
 	ScanQrCode,
 	Sparkles,
 } from "lucide-react";
-import { LinkIcon } from "./LinkIcon";
 import type { FormInstance } from "antd/es/form";
 import type { ShortenFormValues, ShortenedURL } from "../types";
 
@@ -93,7 +93,7 @@ export function ShortenerForm({
 								size="large"
 								id="tinylnk-url-input"
 								placeholder="https://example.com/launch/landing-page"
-								prefix={<LinkIcon size={20} style={{ marginRight: "8px" }} />}
+								prefix={<Link size={20} style={{ color: "var(--text-muted)", marginRight: "8px" }} />}
 							/>
 						</Form.Item>
 

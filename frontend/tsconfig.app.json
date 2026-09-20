@@ -26,7 +26,3 @@
   },
   "include": ["src"]
 }
-
-// TODO: Enable strict mode for TypeScript
-
-// TODO: Enable strictest TypeScript compiler options

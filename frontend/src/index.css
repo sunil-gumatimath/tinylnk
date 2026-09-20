@@ -8,7 +8,6 @@
   --surface-strong: #fffdf8;
   --surface-muted: #f1e8db;
   --line: #d8cfc0;
-  --line-strong: #cabda8;
   --text: #14213d;
   --text-muted: #5b6475;
   --heading: #0d1b2a;
@@ -22,7 +21,6 @@
   --chart-axis: #7b7280;
   --tooltip-bg: #fffaf2;
   --tooltip-border: #d8cfc0;
-  --radius-xl: 32px;
   --radius-lg: 24px;
   --radius-md: 18px;
   --badge-bg: rgba(255, 255, 255, 0.55);
@@ -42,7 +40,6 @@
   --surface-strong: #1e293b;
   --surface-muted: #334155;
   --line: #334155;
-  --line-strong: #475569;
   --text: #e2e8f0;
   --text-muted: #94a3b8;
   --heading: #f8fafc;
@@ -233,7 +230,6 @@ a {
   padding: 8px 0 0;
 }
 
-.section-kicker,
 .panel-label,
 .result-badge {
   display: inline-flex;
@@ -320,11 +316,6 @@ a {
   text-overflow: ellipsis;
 }
 
-.panel-header {
-  margin-bottom: 16px;
-}
-
-.panel-header h3,
 .chart-heading h4 {
   margin: 8px 0 0;
   color: var(--heading);
@@ -464,15 +455,6 @@ a {
   margin-bottom: 16px;
 }
 
-.table-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 80px 0;
-  color: var(--text-muted);
-}
-
 .modal-loading-notice {
   display: flex;
   align-items: center;
@@ -506,12 +488,6 @@ a {
 .dashboard-subtitle {
   margin: 0 !important;
   color: var(--text-muted);
-}
-
-.table-loading {
-  display: flex;
-  justify-content: center;
-  padding: 80px 0;
 }
 
 .chart-legend {
@@ -552,26 +528,6 @@ a {
   gap: 16px;
 }
 
-/* "Load more" sits under the grid (grid children are cards, so it lives in a
-   wrapper with the grid's own gap). */
-.links-more {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
-}
-
-.link-card-top {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: start;
-}
-
-.link-copy {
-  min-width: 0;
-}
-
 .link-short {
   display: inline-flex;
   align-items: center;
@@ -582,32 +538,11 @@ a {
   font-weight: 800;
 }
 
-.link-short a {
-  text-decoration: none;
-}
-
 .link-original {
   margin: 8px 0 0;
   color: var(--text-muted);
   word-break: break-word;
   line-height: 1.7;
-}
-
-.link-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.link-actions .ant-btn {
-  min-width: 42px;
-}
-
-.link-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
 }
 
 .meta-tag.ant-tag {
@@ -620,11 +555,6 @@ a {
   background: var(--surface-muted);
   color: var(--text-muted);
   font-weight: 700;
-}
-
-.subtle-tag.ant-tag {
-  background: rgba(249, 115, 22, 0.12);
-  color: var(--tag-warn-text);
 }
 
 .empty-state {
@@ -834,7 +764,6 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .link-card-top,
   .form-submit-row {
     flex-direction: column;
     align-items: stretch;
@@ -842,18 +771,6 @@ a {
 
   /* Compact icon actions stay in one tappable row on phones instead of
      stacking into six full-width buttons. */
-  .link-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .link-actions .ant-btn {
-    width: 44px;
-    min-width: 44px;
-    flex: 0 0 auto;
-    padding-inline: 0;
-  }
-
   .link-actions .ant-btn span:not(.anticon) {
     display: none;
   }

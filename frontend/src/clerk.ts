@@ -29,7 +29,7 @@ export function getClerkAppearance(isDark: boolean) {
 	};
 }
 
-export interface AppAuth {
+interface AppAuth {
 	isSignedIn: boolean | undefined;
 	getToken: () => Promise<string | null>;
 }
