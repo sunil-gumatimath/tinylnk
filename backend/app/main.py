@@ -8,7 +8,14 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-load_dotenv()  # Load .env before any os.getenv() calls
+# Load configuration before any os.getenv() calls. dotenv never overrides a
+# variable that is already set, so real environment variables always win.
+# .env.local is loaded first purely so that, between the two files, it takes
+# precedence over .env — it is the gitignored per-machine override file that
+# Vite also reads.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env.local"))
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 from datetime import datetime, timezone
 
@@ -25,15 +32,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
 from .auth import AuthUser, OptionalAuthUser
-from .database import Base, SessionLocal, engine, get_db
+from .database import SessionLocal, get_db
 from .logging_config import RequestLogMiddleware, setup_logging
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
 # Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
 setup_logging()
 
-# Create tables and stamp/check the schema version (fails loudly on stale DBs)
-Base.metadata.create_all(bind=engine)
+# Stamp/check the schema version and create any missing tables. This runs on
+# the advisory-locked connection inside ensure_schema_version, so concurrent
+# serverless cold starts cannot race the same DDL.
 _startup_db = SessionLocal()
 try:
     models.ensure_schema_version(_startup_db)
@@ -42,7 +50,6 @@ finally:
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
-
 
 
 # CORS origins (comma-separated env var, locked down by default)
@@ -77,9 +84,7 @@ RL_QR = os.getenv("TINYLNK_RATE_LIMIT_QR", "120/minute")
 # link — including ownerless legacy rows created before per-user ownership
 # existed (schema v1). Keep this to yourself / your operators.
 ADMIN_USER_IDS = {
-    uid.strip()
-    for uid in os.getenv("TINYLNK_ADMIN_USER_IDS", "").split(",")
-    if uid.strip()
+    uid.strip() for uid in os.getenv("TINYLNK_ADMIN_USER_IDS", "").split(",") if uid.strip()
 }
 
 # Docs are disabled by default in production (the OpenAPI schema leaks every
@@ -111,11 +116,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers.update(
+            {
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "X-XSS-Protection": "1; mode=block",
+                "Referrer-Policy": "strict-origin-when-cross-origin",
+                "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+            }
+        )
         return response
 
 
@@ -125,8 +134,16 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     MAX_BODY_SIZE = 1_048_576  # 1 MB
 
     async def dispatch(self, request: Request, call_next):
-        if request.headers.get("content-length"):
-            if int(request.headers["content-length"]) > self.MAX_BODY_SIZE:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                too_large = int(content_length) > self.MAX_BODY_SIZE
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+            if too_large:
                 return JSONResponse(
                     status_code=413,
                     content={"detail": "Request body too large."},
@@ -208,10 +225,6 @@ a.b:hover{{background:#1d4ed8}}
 </div></body></html>"""
 
 
-
-
-
-
 # Simple bounded cache for QR images (avoids repeated CPU-heavy generation)
 _qr_cache: dict[str, bytes] = {}
 _QR_CACHE_MAX = 500
@@ -233,7 +246,10 @@ def _generate_qr(
 
     img = qr.make_image(fill_color=fg_color, back_color=bg_color)
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    # Positional on purpose: qrcode's declared ``BaseImage.save(stream, kind)``
+    # has no ``format`` keyword, while the PIL backend's override accepts it.
+    # Positional works against both signatures (the PIL backend sets format).
+    img.save(buf, "PNG")
     data = buf.getvalue()
 
     if len(_qr_cache) >= _QR_CACHE_MAX:
@@ -296,7 +312,10 @@ def _record_click(db: Session, url: models.URL, request: Request) -> bool | None
 
 def _claim_click_or_410(db: Session, url: models.URL, request: Request) -> None:
     """Record a click, refusing the redirect when the atomic claim is declined."""
-    if _record_click(db, url, request) is False:
+    recorded = _record_click(db, url, request)
+    # ``None`` means analytics storage failed and the redirect should continue;
+    # only an explicit ``False`` (the guarded UPDATE declined the claim) is a 410.
+    if recorded is not None and not recorded:
         # A concurrent redirect may have consumed the final allowed click after
         # the ORM row was read; the guarded UPDATE declines this request.
         raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
@@ -453,9 +472,7 @@ async def update_url_endpoint(
     # Validate new alias if provided
     if update_data.custom_alias:
         if update_data.custom_alias.lower() in RESERVED_ALIASES:
-            raise HTTPException(
-                status_code=400, detail="This alias is reserved."
-            )
+            raise HTTPException(status_code=400, detail="This alias is reserved.")
         if not is_valid_alias(update_data.custom_alias):
             raise HTTPException(
                 status_code=400,
@@ -543,7 +560,6 @@ async def get_recent(
     Results are scoped to links the caller owns; TINYLNK_ADMIN_USER_IDS members
     additionally see ownerless (legacy/anonymous) links.
     """
-    creator_ip = request.client.host if request.client else None
     urls = crud.get_recent_urls(
         db,
         search=search,
@@ -552,7 +568,6 @@ async def get_recent(
         offset=offset,
         owner_id=auth["sub"],
         admin_ids=ADMIN_USER_IDS,
-        creator_ip=creator_ip,
     )
     base_url = str(request.base_url).rstrip("/")
     return [_url_response(u, base_url) for u in urls]
@@ -566,10 +581,7 @@ async def get_tags(
     db: Session = Depends(get_db),
 ):
     """Get unique tags across the links this caller can manage."""
-    creator_ip = request.client.host if request.client else None
-    return crud.get_distinct_tags(
-        db, owner_id=auth["sub"], admin_ids=ADMIN_USER_IDS, creator_ip=creator_ip
-    )
+    return crud.get_distinct_tags(db, owner_id=auth["sub"], admin_ids=ADMIN_USER_IDS)
 
 
 @app.delete("/api/urls/{short_code}", status_code=204)
@@ -675,7 +687,6 @@ async def get_qr_code(
             ) from None
 
     return Response(content=_generate_qr(short_url, fg_color, bg_color), media_type="image/png")
-
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

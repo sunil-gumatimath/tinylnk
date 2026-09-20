@@ -1,52 +1,51 @@
+"""Database engine/session setup.
+
+PostgreSQL (Neon on Vercel, any Postgres when self-hosting) is the only
+supported runtime database. ``DATABASE_URL`` is required and must be a
+PostgreSQL connection URL; keep ``sslmode=require`` and prefer Neon's pooled
+connection string.
+
+There is exactly one exception, and it is test-only: the pytest suite sets
+``TINYLNK_TESTING=1`` together with a throwaway ``sqlite:///`` URL so tests run
+hermetically without a live Postgres. That escape hatch is ignored in every
+non-test process.
+"""
+
 import os
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Local SQLite default matches .env.example / docker-compose: ./data/urlshortener.db
-default_db_path = os.path.join(PROJECT_ROOT, "data", "urlshortener.db")
+TESTING = os.getenv("TINYLNK_TESTING", "").lower() in {"1", "true", "yes"}
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-if DATABASE_URL:
-    # Neon supplies postgresql:// URLs; select the installed psycopg v3 driver.
-    if DATABASE_URL.startswith(("postgres://", "postgresql://")):
-        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
-    if not DATABASE_URL.startswith("postgresql+psycopg://"):
-        raise RuntimeError("DATABASE_URL must be a PostgreSQL connection URL.")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is required: set it to a PostgreSQL (Neon) connection URL. "
+        "SQLite is not supported outside the test suite."
+    )
+
+# Neon supplies postgresql:// URLs; select the installed psycopg v3 driver.
+if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
+
+if DATABASE_URL.startswith("postgresql+psycopg://"):
     engine = create_engine(
         DATABASE_URL,
         # Neon handles pooling. Do not retain idle connections across function invocations.
         poolclass=NullPool,
+        # prepare_threshold=None disables psycopg's automatic prepared statements,
+        # which Neon's pooled (PgBouncer transaction-mode) endpoint cannot reuse.
         connect_args={"connect_timeout": 10, "prepare_threshold": None},
         echo=False,
     )
+elif TESTING and DATABASE_URL.startswith("sqlite://"):
+    # Test-only backend (see module docstring). Never reachable in production.
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    if os.getenv("VERCEL"):
-        raise RuntimeError("Set DATABASE_URL before deploying to Vercel; SQLite is local-only.")
-    raw_db_path = os.getenv("SQLITE_DB_PATH", default_db_path)
-    db_path = raw_db_path if os.path.isabs(raw_db_path) else os.path.join(PROJECT_ROOT, raw_db_path)
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-    except OSError as exc:
-        raise RuntimeError("Could not create the local SQLite data directory.") from exc
-    DATABASE_URL = f"sqlite:///{db_path}"
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False, "timeout": 10},
-        echo=False,
-    )
-
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
-        """SQLite-only single-writer tuning for local development."""
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL;")
-        cursor.execute("PRAGMA busy_timeout = 5000;")
-        cursor.execute("PRAGMA synchronous = NORMAL;")
-        cursor.close()
+    raise RuntimeError("DATABASE_URL must be a PostgreSQL connection URL.")
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

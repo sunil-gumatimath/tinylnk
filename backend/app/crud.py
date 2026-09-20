@@ -1,9 +1,9 @@
 """Database CRUD operations for the URL shortener.
 
-Works on both SQLite (local development, default) and PostgreSQL
-(Neon/Vercel, via DATABASE_URL). The only dialect-sensitive spot is
-``get_url_stats``, where SQL ``date()`` returns text on SQLite and
-``datetime.date`` on PostgreSQL — both normalized with ``str()``.
+PostgreSQL (Neon on Vercel) is the runtime database; SQLite backs the hermetic
+unit tests only. The one dialect-sensitive spot is ``get_url_stats``, where SQL
+``date()`` returns text on SQLite and ``datetime.date`` on PostgreSQL — both
+normalized with ``str()``.
 """
 
 import csv
@@ -11,10 +11,11 @@ import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from io import StringIO
+from typing import Any, cast
 from urllib.parse import urlparse
 
+from sqlalchemy import CursorResult, text
 from sqlalchemy import func as _sa_func
-from sqlalchemy import text as _sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from user_agents import parse
@@ -70,8 +71,10 @@ def create_short_url(
     # Generate a cryptographically random short code (collision-safe)
     for _ in range(10):
         code = secrets.token_urlsafe(6)
-        existing = db.query(models.URL).filter(models.URL.short_code == code).first()
-        if not existing:
+        # Check aliases too, not just short codes: ``get_url_by_code`` resolves
+        # short_code before custom_alias, so a generated code equal to another
+        # link's alias would permanently shadow that link.
+        if not get_url_by_code(db, code):
             db_url.short_code = code
             break
     else:
@@ -167,7 +170,7 @@ def record_click(
     connections.
     """
     result = db.execute(
-        _sa_text(
+        text(
             """
             UPDATE urls
             SET click_count = click_count + 1
@@ -177,7 +180,9 @@ def record_click(
         ),
         {"url_id": url.id},
     )
-    if result.rowcount != 1:
+    # ``Session.execute`` is typed as ``Result``, but a Core UPDATE returns a
+    # ``CursorResult``, which is what carries ``rowcount``.
+    if cast(CursorResult[Any], result).rowcount != 1:
         db.rollback()
         return False
 
@@ -217,9 +222,9 @@ def get_url_stats(
     # timezone on PostgreSQL, so a non-UTC session (or a future SET TIME ZONE)
     # would silently shift chart buckets; timezone('UTC', ...) pins it.
     if db.get_bind().dialect.name == "postgresql":
-        day_expr = _sa_func.date(
-            _sa_func.timezone("UTC", models.ClickEvent.clicked_at)
-        ).label("day")
+        day_expr = _sa_func.date(_sa_func.timezone("UTC", models.ClickEvent.clicked_at)).label(
+            "day"
+        )
     else:
         # SQLite has no session timezone — plain date() is UTC for our stored values.
         day_expr = _sa_func.date(models.ClickEvent.clicked_at).label("day")
@@ -352,17 +357,15 @@ def _scoped_urls_query(
     db: Session,
     owner_id: str | None,
     admin_ids: set[str] | None,
-    creator_ip: str | None,
 ):
     """Base URL query scoped to what ``owner_id`` is allowed to manage.
 
     * Signed-in users see their own links; users in ``admin_ids`` (the
       TINYLNK_ADMIN_USER_IDS allowlist) see everything, including legacy
       ownerless rows — this is also how pre-ownership data stays manageable.
-    * ``creator_ip`` is only a fallback for genuinely anonymous callers
-      (``owner_id`` None): they can see ownerless links. A signed-in caller
-      must never be narrowed by their IP (and the test client's host is the
-      non-IP string "testclient", which would wrongly trigger that branch).
+    * ``owner_id`` None means an unauthenticated caller, which can only ever
+      match ownerless rows. Every management endpoint requires auth, so this
+      branch is defensive rather than user-reachable.
     """
     query = db.query(models.URL)
     admin_ids = admin_ids or set()
@@ -370,7 +373,8 @@ def _scoped_urls_query(
         return query  # admins manage everything
     if owner_id:
         return query.filter(models.URL.owner_id == owner_id)
-    # Anonymous: only ownerless links (kept so the signature stays explicit).
+    # Ownerless links only. Only admin-allowlisted users can reach them; see
+    # ``resolve_owner``.
     return query.filter(models.URL.owner_id.is_(None))
 
 
@@ -382,10 +386,9 @@ def get_recent_urls(
     offset: int = 0,
     owner_id: str | None = None,
     admin_ids: set[str] | None = None,
-    creator_ip: str | None = None,
 ) -> list[models.URL]:
     """Get recently created URLs visible to this caller, optionally filtered."""
-    query = _scoped_urls_query(db, owner_id, admin_ids, creator_ip)
+    query = _scoped_urls_query(db, owner_id, admin_ids)
 
     if search:
         # Escape LIKE wildcards so user-supplied %, _, and \ are matched
@@ -408,10 +411,9 @@ def get_distinct_tags(
     db: Session,
     owner_id: str | None = None,
     admin_ids: set[str] | None = None,
-    creator_ip: str | None = None,
 ) -> list[str]:
     """Distinct non-empty tags across the links this caller can manage."""
-    query = _scoped_urls_query(db, owner_id, admin_ids, creator_ip)
+    query = _scoped_urls_query(db, owner_id, admin_ids)
     rows = query.with_entities(models.URL.tag).filter(models.URL.tag.isnot(None)).distinct().all()
     return [row[0] for row in rows if row[0]]
 

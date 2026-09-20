@@ -7,10 +7,11 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 def _ensure_utc(value: datetime) -> datetime:
     """Attach UTC to naive datetimes coming out of the database.
 
-    SQLAlchemy's plain ``DateTime`` column drops ``tzinfo`` on SQLite, so rows
-    read back are naive even though they were written as UTC. Without an
-    explicit offset the browser parses ``2026-09-15T05:03:26`` as *local* time
-    and every date/time the UI renders is shifted by the viewer's UTC offset.
+    PostgreSQL returns aware values for the ``timestamptz`` columns, but SQLite
+    (the test-only backend) has no timezone type and hands back naive values
+    even though they were written as UTC. Without an explicit offset the browser
+    parses ``2026-09-15T05:03:26`` as *local* time and every date/time the UI
+    renders is shifted by the viewer's UTC offset.
     """
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -23,6 +24,7 @@ UTCDateTime = Annotated[datetime, AfterValidator(_ensure_utc)]
 
 class URLCreate(BaseModel):
     """Schema for creating a new short URL."""
+
     url: str
     custom_alias: Optional[str] = None
     # None = never expires. Must be > 0 on create; fractional hours are
@@ -107,6 +109,7 @@ class StatsItem(BaseModel):
 
 class URLStats(BaseModel):
     """Schema for URL analytics/stats."""
+
     original_url: str
     short_code: str
     created_at: UTCDateTime
