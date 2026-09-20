@@ -1,4 +1,4 @@
-"""Tests for the schema-version bootstrap / v1 -> v2 migration."""
+"""Tests for the schema-version bootstrap / v1 -> v2 -> v3 migrations."""
 
 import os
 import tempfile
@@ -8,6 +8,14 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app import models
+from app.database import Base
+
+
+def _schema_version(session) -> int:
+    """Read the single schema_version row, failing the test if it is missing."""
+    row = session.get(models.SchemaVersion, 1)
+    assert row is not None
+    return row.version
 
 
 def _v1_database(path):
@@ -29,9 +37,7 @@ def _v1_database(path):
                 "id INTEGER PRIMARY KEY, version INTEGER NOT NULL, upgraded_at DATETIME)"
             )
         )
-        conn.execute(
-            text("INSERT INTO schema_version (id, version) VALUES (1, 1)")
-        )
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 1)"))
         conn.execute(
             text(
                 "INSERT INTO urls (id, original_url, short_code, click_count) "
@@ -66,7 +72,7 @@ class TestSchemaMigration:
 
             cols = {c["name"] for c in inspect(engine).get_columns("urls")}
             assert "owner_id" in cols
-            assert session.get(models.SchemaVersion, 1).version == 2
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
 
             # The pre-ownership row survives and is ownerless (admin-managed).
             row = session.query(models.URL).filter_by(short_code="legacy1").one()
@@ -85,7 +91,7 @@ class TestSchemaMigration:
         try:
             models.ensure_schema_version(session)
             models.ensure_schema_version(session)  # second run is a no-op
-            assert session.get(models.SchemaVersion, 1).version == 2
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
         finally:
             session.close()
             engine.dispose()
@@ -98,6 +104,7 @@ class TestSchemaMigration:
         try:
             models.ensure_schema_version(session)
             row = session.get(models.SchemaVersion, 1)
+            assert row is not None
             row.version = models.CURRENT_SCHEMA_VERSION + 1
             session.commit()
             with pytest.raises(RuntimeError, match="Unsupported database schema version"):
@@ -185,7 +192,7 @@ class TestSelfHealingBootstrap:
             models.ensure_schema_version(session)
             cols = {c["name"] for c in inspect(engine).get_columns("urls")}
             assert "owner_id" in cols
-            assert session.get(models.SchemaVersion, 1).version == models.CURRENT_SCHEMA_VERSION
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
         finally:
             session.close()
             engine.dispose()
@@ -200,14 +207,15 @@ class TestSelfHealingBootstrap:
         session = sessionmaker(bind=engine)()
         try:
             models.ensure_schema_version(session)
-            assert session.get(models.SchemaVersion, 1).version == models.CURRENT_SCHEMA_VERSION
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
             assert session.query(models.URL).one().owner_id is None
         finally:
             session.close()
             engine.dispose()
 
     def test_empty_database_gets_tables_and_version(self, tmp_path):
-        """Pointing at a brand-new file creates the schema and stamps v2."""
+        """Pointing at a brand-new file creates the schema and stamps the
+        current version."""
         path = str(tmp_path / "empty.db")
         engine = create_engine(f"sqlite:///{path}")
         session = sessionmaker(bind=engine)()
@@ -215,8 +223,53 @@ class TestSelfHealingBootstrap:
             models.ensure_schema_version(session)
             tables = set(inspect(engine).get_table_names())
             assert {"urls", "click_events", "schema_version"} <= tables
-            assert session.get(models.SchemaVersion, 1).version == models.CURRENT_SCHEMA_VERSION
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
         finally:
             session.close()
             engine.dispose()
 
+
+class TestTimestamptzMigration:
+    """The v2 -> v3 rewrite of the timestamp columns to ``timestamptz``.
+
+    The rewrite itself is PostgreSQL-only (SQLite is the test backend), so the
+    clauses are validated by compiling them for the Postgres dialect rather
+    than by executing them.
+    """
+
+    def test_every_timestamptz_model_column_has_an_alter_clause(self):
+        """A new ``DateTime(timezone=True)`` column without a v3 clause would
+        leave existing databases naive — fail loudly instead of drifting."""
+        from sqlalchemy import DateTime
+
+        expected = {
+            (table.name, column.name)
+            for table in Base.metadata.sorted_tables
+            for column in table.columns
+            if isinstance(column.type, DateTime) and column.type.timezone
+        }
+        assert expected == set(models._TIMESTAMPTZ_ALTER)
+
+    def test_alter_clauses_reinterpret_naive_values_as_utc(self):
+        """Each clause must convert to timestamptz and pin the existing (naive,
+        UTC-written) values to UTC rather than the server's session timezone."""
+        from sqlalchemy.dialects import postgresql
+
+        for column, clause in models._TIMESTAMPTZ_ALTER.items():
+            compiled = str(clause.compile(dialect=postgresql.dialect()))
+            assert "TIMESTAMP WITH TIME ZONE" in compiled, column
+            assert "AT TIME ZONE 'UTC'" in compiled, column
+
+    def test_sqlite_bootstrap_still_reaches_current_version(self, tmp_path):
+        """The v3 step must not break the (test-only) SQLite bootstrap."""
+        path = str(tmp_path / "v3.db")
+        _legacy_database(path, with_version_row=True, with_owner_id=True)
+
+        engine = create_engine(f"sqlite:///{path}")
+        session = sessionmaker(bind=engine)()
+        try:
+            models.ensure_schema_version(session)
+            assert _schema_version(session) == models.CURRENT_SCHEMA_VERSION
+        finally:
+            session.close()
+            engine.dispose()

@@ -145,7 +145,10 @@ for path in (DB, DB + "-wal", DB + "-shm"):
 
 env = dict(
     os.environ,
-    SQLITE_DB_PATH=DB,
+    # The app is PostgreSQL-only; this end-to-end check uses the documented
+    # test-only SQLite escape hatch with a throwaway file.
+    TINYLNK_TESTING="1",
+    DATABASE_URL=f"sqlite:///{DB}",
     CLERK_ISSUER=_CLERK_ISSUER,
     CLERK_PUBLISHABLE_KEY="pk_test_e2e",
     TINYLNK_CORS_ORIGINS="http://localhost:8010",
@@ -197,8 +200,11 @@ def check(label, condition, detail=""):
 def _dump_server_log() -> None:
     """Terminate the server and print its stderr so startup failures show up."""
     proc.terminate()
+    stderr = proc.stderr
+    if stderr is None:  # Popen was launched with stderr=subprocess.PIPE
+        return
     try:
-        output = proc.stderr.read()
+        output = stderr.read()
     except Exception:
         return
     if output:

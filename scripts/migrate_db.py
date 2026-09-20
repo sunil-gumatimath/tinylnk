@@ -1,15 +1,18 @@
-"""Migrate and verify a tinylnk database — SQLite or PostgreSQL/Neon.
+"""Migrate and verify a tinylnk database — PostgreSQL/Neon.
 
 Runs the same bootstrap the application uses at startup
 (``create_all`` + ``ensure_schema_version``) and then prints a verification
 report. Useful for:
 
-* applying the v1 -> v2 ownership migration to a hosted PostgreSQL/Neon
-  database *without* waiting for a deploy, and
-* confirming afterwards that the column, index, version row and data survived.
+* applying the ownership (v1 -> v2) and timestamptz (v2 -> v3) migrations to a
+  hosted PostgreSQL/Neon database *without* waiting for a deploy, and
+* confirming afterwards that the columns, indexes, version row and data
+  survived.
 
-Neither mode takes a destructive action: the migration only ever adds the
-``urls.owner_id`` column/index and advances the version row.
+Neither mode takes a destructive action: the migration only adds the
+``urls.owner_id`` column/index and rewrites the timestamp columns to
+``timestamptz`` (existing values are reinterpreted as UTC, never dropped),
+then advances the version row.
 
     # Report only — connects, inspects, changes nothing
     python scripts/migrate_db.py --check
@@ -23,8 +26,8 @@ Neither mode takes a destructive action: the migration only ever adds the
 Environment
 -----------
 ``DATABASE_URL``
-    PostgreSQL connection URL. When unset, ``SQLITE_DB_PATH`` (or the local
-    default ``./data/urlshortener.db``) is used instead.
+    PostgreSQL connection URL (required). SQLite is not used outside the test
+    suite.
 
 Exit codes: 0 = success/healthy, 1 = failure or still needing a migration.
 """
@@ -74,9 +77,7 @@ def _report(conn, dialect: str) -> dict:
     }
 
     if "urls" in tables:
-        summary["has_owner_id"] = "owner_id" in {
-            c["name"] for c in inspector.get_columns("urls")
-        }
+        summary["has_owner_id"] = "owner_id" in {c["name"] for c in inspector.get_columns("urls")}
         summary["indexes"] = [i["name"] for i in inspector.get_indexes("urls")]
 
     if "schema_version" in tables:
@@ -130,7 +131,7 @@ def main() -> int:
     parser.add_argument(
         "--database-url",
         default=None,
-        help="Override the target database (defaults to $DATABASE_URL or SQLite)",
+        help="Override the target database (defaults to $DATABASE_URL)",
     )
     args = parser.parse_args()
 
@@ -141,11 +142,19 @@ def main() -> int:
     db_engine = engine
     if args.database_url:
         from sqlalchemy import create_engine
+        from sqlalchemy.pool import NullPool
 
         url = args.database_url
         if url.startswith(("postgres://", "postgresql://")):
             url = "postgresql+psycopg://" + url.split("://", 1)[1]
-        db_engine = create_engine(url, connect_args={"connect_timeout": 10})
+        # Same Neon-safety settings as the app: no idle connections, and no
+        # psycopg auto-prepared statements (Neon's pooled endpoint cannot reuse
+        # them). Without these the CLI can fail where the app succeeds.
+        db_engine = create_engine(
+            url,
+            poolclass=NullPool,
+            connect_args={"connect_timeout": 10, "prepare_threshold": None},
+        )
 
     db = SessionLocal(bind=db_engine)
     try:
@@ -199,4 +208,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
