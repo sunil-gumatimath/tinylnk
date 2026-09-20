@@ -103,13 +103,21 @@ function App() {
 		return { total: recentLinks.length, clicks, active };
 	}, [recentLinks]);
 
-	/** Auth headers for admin-protected requests: Clerk JWT only. */
+	/** Auth headers for admin-protected requests: Clerk JWT only.
+	 *
+	 * Throws when signed in but no session token is available (session still
+	 * loading or expired). Creating a link in that state would store it
+	 * ownerless — permanently invisible on this dashboard — so failing loudly
+	 * here is safer than silently orphaning the link. Callers surface the
+	 * message via their normal error UI. */
 	const authHeaders = async (): Promise<Record<string, string>> => {
 		const headers: Record<string, string> = {};
 		if (isSignedIn) {
 			const token = await getToken();
 			if (token) {
 				headers["Authorization"] = `Bearer ${token}`;
+			} else {
+				throw new Error("Your sign-in session is not ready. Wait a moment and try again.");
 			}
 		}
 		return headers;
