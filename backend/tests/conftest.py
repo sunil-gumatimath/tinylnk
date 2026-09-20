@@ -148,18 +148,19 @@ def clear_caches():
 # short code so tests can immediately exercise redirect / stats / etc.
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def sample_url(client):
+def sample_url(client, auth_headers):
     """Create a simple short URL and return its ``short_code``."""
     response = client.post(
         "/api/shorten",
         json={"url": "https://example.com/test-page"},
+        headers=auth_headers,
     )
     assert response.status_code == 200, response.text
     return response.json()["short_code"]
 
 
 @pytest.fixture
-def sample_url_with_alias(client):
+def sample_url_with_alias(client, auth_headers):
     """Create a short URL with a custom alias and return data."""
     response = client.post(
         "/api/shorten",
@@ -167,6 +168,7 @@ def sample_url_with_alias(client):
             "url": "https://example.com/alias-page",
             "custom_alias": "myalias",
         },
+        headers=auth_headers,
     )
     assert response.status_code == 200, response.text
     return response.json()

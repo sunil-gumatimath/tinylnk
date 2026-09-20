@@ -25,6 +25,7 @@ Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 - **Tagging** — Organize links with custom tags for easy categorization
 - **Dark/Light Theme** — Toggle between themes with persistent preference
 - **Optional Clerk Sign-in** — With a Clerk key configured, the dashboard is gated behind sign-in: anyone can still shorten a link, but editing, deleting, and analytics require an authenticated session
+- **Per-user link ownership** — Links created while signed in belong to that user; other signed-in users cannot see or touch them (see [Ownership](#ownership))
 
 ### Analytics
 
@@ -36,7 +37,7 @@ Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 
 - **Link Editing** — Update a link's destination URL, alias, tag, expiry, or click limit at any time
 - **Search & Filtering** — Search links by URL, alias, or short code; filter by tag
-- **Recent Links Dashboard** — View and manage recently created links with click statistics
+- **Recent Links Dashboard** — View and manage recently created links with click statistics, paged 25 at a time (`Load more`)
 
 ### QR Codes
 
@@ -62,6 +63,41 @@ Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 | **Deployment** | Vercel, Docker, Docker Compose |
 
 ## Quick Start
+
+### Vercel + Neon PostgreSQL
+
+Deployed via `vercel.json` with `DATABASE_URL` (Neon PostgreSQL) set in the
+Vercel project environment. SQLite is bypassed entirely.
+
+**Schema migrations on Neon.** The app runs `create_all` + the schema-version
+bootstrap on every cold start, so a schema upgrade applies itself when the new
+code deploys — the database is migrated by *the new code*, never by old code
+that does not understand the newer schema. To apply or inspect a migration
+without waiting for a deploy (or to verify afterwards), run the same bootstrap
+from your machine against the Neon URL:
+
+```bash
+# Report only — connects, inspects, changes nothing
+DATABASE_URL="postgresql://...neon.tech/db?sslmode=require" \
+  python scripts/migrate_db.py --check
+
+# Apply the migration, then verify
+DATABASE_URL="postgresql://...neon.tech/db?sslmode=require" \
+  python scripts/migrate_db.py
+```
+
+> Do **not** migrate a database out-of-band *before* deploying the new code —
+> the currently deployed build refuses databases stamped with a schema version
+> it does not know and fails loudly (by design). Deploy first, or migrate and
+> deploy together.
+
+Concurrent serverless cold starts are safe: on PostgreSQL the bootstrap
+serializes on an advisory lock and uses `ADD COLUMN IF NOT EXISTS` /
+`CREATE INDEX IF NOT EXISTS`.
+
+Existing links created before ownership existed have no owner; they are
+manageable only by `TINYLNK_ADMIN_USER_IDS` members (set it in the Vercel
+environment for your own user id).
 
 ### Docker (Recommended)
 
@@ -151,15 +187,33 @@ deployments deliberately refuse to fall back to SQLite.
 | `DELETE` | `/api/urls/{short_code}` | `Clerk JWT` | Delete a short URL and its analytics |
 | `GET` | `/api/stats/{short_code}` | `Clerk JWT` | Get analytics (supports `?start_date=` & `?end_date=`) |
 | `GET` | `/api/stats/{short_code}/export` | `Clerk JWT` | Export analytics as CSV |
-| `GET` | `/api/recent` | `Clerk JWT` | List recent links (supports `?search=` & `?tag=`) |
+| `GET` | `/api/recent` | `Clerk JWT` | List recent links (`?search=`, `?tag=`, `?limit=` 1-100, `?offset=`) |
 | `GET` | `/api/tags` | `Clerk JWT` | List all unique tags |
 | `GET` | `/api/qr/{short_code}` | — | Generate QR code (supports `?fg=` & `?bg=` colors) |
 | `GET` | `/api/health` | — | Health check |
 | `GET` | `/{short_code}` | — | Redirect to the original URL |
+| `GET` | `/__continue/{short_code}` | — | Second hop of the redirect warning page (records the click) |
 
 #### Authentication
 
 Management endpoints accept a **Clerk JWT**: send `Authorization: Bearer <clerk-jwt>`. Verified against the configured `CLERK_ISSUER` (the JWT `iss` claim must match) and validated for expiry and signature. This is the recommended path for browser, CI, and programmatic clients.
+
+#### Ownership
+
+Every link has an owner, and the management endpoints are scoped to it — one
+signed-in user can never read, edit, export, or delete another user's links
+(requests for a foreign link return `404`, not `403`, so existence is not
+disclosed). `POST /api/shorten` accepts an optional token: with one, the link
+belongs to that user; without one it stays **ownerless**.
+
+| Link created | Who can manage it |
+| --- | --- |
+| Signed in | That user, plus `TINYLNK_ADMIN_USER_IDS` members |
+| Signed out (ownerless) | `TINYLNK_ADMIN_USER_IDS` members only |
+
+Set `TINYLNK_ADMIN_USER_IDS` to your own Clerk user id (the JWT `sub` claim) —
+otherwise ownerless links created while signed out have no dashboard owner.
+Rows created before schema v2 have no owner and are managed by that allowlist.
 
 ### Create Short URL
 
@@ -248,11 +302,15 @@ Copy `.env.example` to `.env` and customise:
 
 | Environment Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | *(empty)* | PostgreSQL connection URL. Required on Vercel; when set, it takes precedence over `SQLITE_DB_PATH`. Neon `postgresql://` URLs are accepted and use psycopg 3. |
-| `SQLITE_DB_PATH` | `urlshortener.db` | Local SQLite path, resolved relative to the repository root. Docker overrides it with `/app/data/urlshortener.db`. |
+| `SQLITE_DB_PATH` | `./data/urlshortener.db` | Local SQLite path, resolved relative to the repository root. Docker overrides it with `/app/data/urlshortener.db`. |
+| `DATABASE_URL` | *(empty)* | PostgreSQL/Neon connection URL (psycopg 3). Required on Vercel; when set, it takes precedence over `SQLITE_DB_PATH` and SQLite is bypassed entirely. |
+| `TINYLNK_ADMIN_KEY` | *(empty)* | **Deprecated.** This setting has no effect — authentication is handled exclusively by Clerk JWT. Remove it from your configuration. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
-| `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs |
+| `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs (click counted only on continue) |
 | `TINYLNK_ENABLE_DOCS` | `false` | Expose the OpenAPI schema and Swagger UI at `/openapi.json` and `/docs` |
+| `TINYLNK_DNS_CHECK` | `false` | Resolve hostnames on shorten and reject ones pointing at private/link-local ranges |
+| `TINYLNK_ADMIN_USER_IDS` | *(empty)* | Comma-separated Clerk user ids that may manage **every** link, including ownerless legacy rows |
+| `TINYLNK_RATE_LIMIT_*` | see `.env.example` | Per-endpoint SlowAPI limit strings (`SHORTEN`, `UPDATE`, `STATS`, `EXPORT`, `RECENT`, `TAGS`, `DELETE`, `REDIRECT`, `QR`) |
 | `LOG_LEVEL` | `INFO` | Logging threshold: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
 | `LOG_FORMAT` | `text` | Set to `json` for structured logs |
 | `SENTRY_DSN` | *(empty)* | Optional Sentry error-tracking DSN |
@@ -314,13 +372,14 @@ tinylnk/
 
 - **Short Code Generation** — Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
-- **Database Selection** — `DATABASE_URL` selects PostgreSQL through psycopg 3; otherwise the app uses SQLite. Vercel requires `DATABASE_URL`, while local and Docker installations can remain self-contained with SQLite.
+- **Database Selection** — `DATABASE_URL` selects PostgreSQL through psycopg 3; otherwise the app uses SQLite (`sqlite:///./data/urlshortener.db` by default). Vercel requires `DATABASE_URL`, while local and Docker installations can remain self-contained with SQLite.
 - **SQLite Concurrency** — WAL mode and a 5s busy-timeout keep readers responsive, but SQLite remains a single-writer store. Use PostgreSQL for serverless or higher-concurrency deployments.
 - **Neon Connections** — PostgreSQL connections use `NullPool`, allowing Neon's pooler to own connection reuse instead of retaining idle connections across serverless invocations.
-- **Schema Bootstrap** — SQLAlchemy creates missing tables and stamps schema version `1` at startup. There is currently no Alembic migration workflow; future schema changes require an explicit migration before increasing the version.
-- **Click Limits** — The counter and limit check are performed in one database update, so concurrent redirects cannot consume more clicks than configured.
+- **Schema Bootstrap** — SQLAlchemy creates missing tables and stamps/advances the `schema_version` row at startup. Older databases are upgraded in place (v1 → v2 adds per-user ownership, `urls.owner_id`); on PostgreSQL the upgrade serializes on an advisory lock and uses `IF NOT EXISTS` DDL, so concurrent serverless cold starts are safe. Stale databases stamped *newer* than the running build fail loudly instead of misbehaving. See `scripts/migrate_db.py` to apply or verify a migration out-of-band.
+- **Click Limits** — The counter and limit check are performed in one guarded database update, so concurrent redirects cannot consume more clicks than configured.
+- **Per-user Ownership** — Management endpoints are scoped to the caller's Clerk user id (or `TINYLNK_ADMIN_USER_IDS` for admins); foreign links return `404` so their existence is not leaked. Links created while signed out are ownerless and admin-managed.
 - **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics stay in the configured SQLite or PostgreSQL database; tinylnk does not include third-party tracking.
-- **Rate Limiting** — SlowAPI limits sensitive endpoints: shortening (30/min), updates (30/min), analytics and recent-link queries (60/min), tag listing (60/min), CSV export (30/min), redirects (60/min), deletion (20/min), and QR generation (30/min).
+- **Rate Limiting** — SlowAPI limits each sensitive endpoint, configurable via `TINYLNK_RATE_LIMIT_*` env vars. Defaults: shortening (30/min), updates (30/min), analytics and recent queries (60/min), tag listing (60/min), CSV export (30/min), deletion (20/min), redirects (**600/min**), QR generation (**120/min**) and the interstitial continue hop (600/min). Redirect and QR limits are deliberately high: a single shared link or printed QR code can put many visitors behind one NAT/corporate egress IP.
 
 ## Backups
 
@@ -398,7 +457,13 @@ GitHub Container Registry.
 - **Path traversal protection** — static assets are served from an allowed
   directory only
 - **SSRF prevention** — blocks shortening of internal and private-network
-  URLs, including `10.x`, `169.254.x`, and `localhost`
+  URLs, including `10.x`, `169.254.x`, and `localhost`. Set
+  `TINYLNK_DNS_CHECK=true` to also resolve hostnames at shorten time and reject
+  any that resolve into a blocked range (catches "public domain that points at
+  `169.254.169.254`"). Note the residual limit: tinylnk never fetches a
+  destination itself — it only redirects browsers — and DNS answers differ per
+  resolver, so a determined rebinding domain can still resolve privately for a
+  visitor
 - **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`,
   `Strict-Transport-Security`, and `Referrer-Policy`
 - **Request size limiting** — rejects payloads over 1 MB
@@ -406,8 +471,12 @@ GitHub Container Registry.
 - **Rate limiting** on sensitive API endpoints
 - **Reserved alias protection** — a case-insensitive check prevents system
   route hijacking
+- **Per-user ownership** — management endpoints are scoped to the caller's
+  Clerk user id (or `TINYLNK_ADMIN_USER_IDS` for admins); foreign links return
+  `404` so their existence is not leaked
 - **Optional redirect interstitial** — warn users before they navigate to an
-  external site
+  external site; the click is counted only when they continue, not when the
+  warning is displayed
 - **QR code caching** — a bounded 500-entry in-memory cache reduces repeated
   generation work
 - Runs as a non-root user in Docker

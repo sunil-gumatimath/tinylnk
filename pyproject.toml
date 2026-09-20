@@ -1,7 +1,9 @@
 [project]
 name = "tinylnk"
 version = "1.0.0"
-requires-python = ">=3.12,<3.13"
+# Matches the Dockerfile base image (python:3.10-slim) so the same code runs
+# locally and in the container.
+requires-python = ">=3.10"
 dependencies = [
   "fastapi==0.115.0",
   "uvicorn[standard]==0.30.0",

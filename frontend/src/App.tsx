@@ -28,6 +28,8 @@ import type { ShortenFormValues, ShortenedURL } from "./types";
 
 const { Content } = Layout;
 const { Title, Paragraph } = Typography;
+// Page size for the dashboard's /api/recent pagination.
+const LINKS_PAGE_SIZE = 25;
 
 const cardVariants = {
 	hidden: { opacity: 0, y: 20, scale: 0.97 },
@@ -77,6 +79,10 @@ function App() {
 	// True once the first dashboard fetch settles — keeps the "No links
 	// yet" empty state from flashing before results arrive.
 	const [linksLoaded, setLinksLoaded] = useState(false);
+	// Cursor for /api/recent pagination; hasMore is false once a page comes
+	// back short of the page size.
+	const [linksOffset, setLinksOffset] = useState(0);
+	const [hasMoreLinks, setHasMoreLinks] = useState(false);
 
 	const currentHost = window.location.origin;
 	const getShortUrl = useMemo(
@@ -117,6 +123,7 @@ function App() {
 		search?: string,
 		tag?: string | null,
 		signal?: AbortSignal,
+		offset: number = 0,
 	) => {
 		if (!isAuthed) return;
 
@@ -134,12 +141,16 @@ function App() {
 			const tagFilter = tag === undefined ? filterTag : tag;
 			if (searchTerm) params.set("search", searchTerm);
 			if (tagFilter) params.set("tag", tagFilter);
+			params.set("limit", String(LINKS_PAGE_SIZE));
+			params.set("offset", String(offset));
 
 			const url = `/api/recent${params.toString() ? "?" + params.toString() : ""}`;
 			const response = await fetch(url, { headers: await authHeaders(), signal: controller.signal });
 			const data = await readJson<ShortenedURL[]>(response);
 			if (controller.signal.aborted) return;
-			setRecentLinks(data);
+			setRecentLinks((prev) => (offset > 0 ? [...prev, ...data] : data));
+			setLinksOffset(offset + data.length);
+			setHasMoreLinks(data.length === LINKS_PAGE_SIZE);
 			await fetchTags(controller.signal);
 		} catch (error) {
 			if (!controller.signal.aborted) setLinksError(errorText(error));
@@ -151,6 +162,8 @@ function App() {
 			}
 		}
 	};
+
+	const loadMoreLinks = () => fetchRecentLinks(undefined, undefined, undefined, linksOffset);
 
 
 	const handleCopy = async (text: string) => {
@@ -186,7 +199,12 @@ function App() {
 			const hours = resolveExpiry(values);
 			const response = await fetch("/api/shorten", {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					// Sending the token (when signed in) makes the link *owned* by
+					// this user, so only they can manage it on the dashboard.
+					...(await authHeaders()),
+				},
 				body: JSON.stringify({
 					url: normalizeUrl(values.url),
 					custom_alias: values.custom_alias?.trim() || null,
@@ -508,6 +526,13 @@ function App() {
 													</motion.div>
 												))}
 											</AnimatePresence>
+											{hasMoreLinks ? (
+												<div className="links-more">
+													<Button onClick={loadMoreLinks} loading={tableLoading}>
+														Load more links
+													</Button>
+												</div>
+											) : null}
 										</div>
 									)}
 								</motion.section>

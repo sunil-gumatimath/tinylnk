@@ -105,4 +105,19 @@ def require_auth(request: Request) -> dict:
     )
 
 
+def optional_auth(request: Request) -> dict | None:
+    """Verify a Clerk Bearer token if one is sent; never raises.
+
+    Used by public endpoints (shorten) so signed-in users get ownership
+    attached to their links while anonymous users keep working.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        user_id = verify_clerk_token(auth_header.removeprefix("Bearer "))
+        if user_id:
+            return {"sub": user_id}
+    return None
+
+
 AuthUser = Annotated[dict, Depends(require_auth)]
+OptionalAuthUser = Annotated[dict | None, Depends(optional_auth)]

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import crud, models, schemas
-from .auth import AuthUser
+from .auth import AuthUser, OptionalAuthUser
 from .database import Base, SessionLocal, engine, get_db
 from .logging_config import RequestLogMiddleware, setup_logging
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
@@ -56,6 +56,31 @@ ALLOWED_ORIGINS = [
 
 # Optional: show a warning page before redirecting (default: disabled)
 REDIRECT_WARNING = os.getenv("TINYLNK_REDIRECT_WARNING", "false").lower() == "true"
+
+# ─── Rate limits (per-endpoint, env-tunable) ────────────────────────────────
+# Redirects and QR codes are the product's *output* — they get the most
+# generous defaults because a link shared to a busy channel or a QR scanned at
+# an event concentrates many visitors behind one NAT / corporate egress IP.
+# Everything else (shorten, stats, tags, export, delete, update) is a
+# management action and can afford to be tighter.
+RL_SHORTEN = os.getenv("TINYLNK_RATE_LIMIT_SHORTEN", "30/minute")
+RL_UPDATE = os.getenv("TINYLNK_RATE_LIMIT_UPDATE", "30/minute")
+RL_STATS = os.getenv("TINYLNK_RATE_LIMIT_STATS", "60/minute")
+RL_EXPORT = os.getenv("TINYLNK_RATE_LIMIT_EXPORT", "30/minute")
+RL_RECENT = os.getenv("TINYLNK_RATE_LIMIT_RECENT", "60/minute")
+RL_TAGS = os.getenv("TINYLNK_RATE_LIMIT_TAGS", "60/minute")
+RL_DELETE = os.getenv("TINYLNK_RATE_LIMIT_DELETE", "20/minute")
+RL_REDIRECT = os.getenv("TINYLNK_RATE_LIMIT_REDIRECT", "600/minute")
+RL_QR = os.getenv("TINYLNK_RATE_LIMIT_QR", "120/minute")
+
+# Users whose Clerk sub is in this comma-separated allowlist can manage any
+# link — including ownerless legacy rows created before per-user ownership
+# existed (schema v1). Keep this to yourself / your operators.
+ADMIN_USER_IDS = {
+    uid.strip()
+    for uid in os.getenv("TINYLNK_ADMIN_USER_IDS", "").split(",")
+    if uid.strip()
+}
 
 # Docs are disabled by default in production (the OpenAPI schema leaks every
 # endpoint). Set TINYLNK_ENABLE_DOCS=true to expose /docs and /openapi.json.
@@ -150,12 +175,18 @@ RESERVED_ALIASES = {
 # ─── Helpers ─────────────────────────────────────────────
 
 
-def _interstitial_page(target_url: str) -> str:
-    """Render a warning page before redirecting to an external URL."""
+def _interstitial_page(target_url: str, code: str) -> str:
+    """Render a warning page before redirecting to an external URL.
+
+    The click is NOT counted when this page is viewed — it is recorded by the
+    ``/__continue/{code}`` hop that the Continue button and the meta-refresh
+    both point at, so analytics reflect only visitors who actually left.
+    """
     safe_url = html.escape(target_url)
+    continue_url = html.escape(f"/__continue/{code}")
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Redirecting — tinylnk</title>
-<meta http-equiv="refresh" content="5;url={safe_url}">
+<meta http-equiv="refresh" content="5;url={continue_url}">
 <style>
 body{{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
@@ -172,7 +203,7 @@ a.b:hover{{background:#1d4ed8}}
 <h2>\u26a0\ufe0f You are leaving tinylnk</h2>
 <p>You will be redirected to an external site:</p>
 <div class="u">{safe_url}</div>
-<a href="{safe_url}" class="b">Continue \u2192</a>
+<a href="{continue_url}" class="b">Continue \u2192</a>
 <p class="s">Auto-redirecting in 5 seconds\u2026</p>
 </div></body></html>"""
 
@@ -222,6 +253,63 @@ def _parse_date(date_str: str | None) -> datetime | None:
         return dt
     except ValueError:
         return None
+
+
+def _url_response(db_url: models.URL, base_url: str) -> schemas.URLResponse:
+    """Build a URLResponse from an ORM row (alias preferred over code)."""
+    code = db_url.custom_alias or db_url.short_code
+    return schemas.URLResponse(
+        id=db_url.id,
+        original_url=db_url.original_url,
+        short_code=code,
+        short_url=f"{base_url}/{code}",
+        created_at=db_url.created_at,
+        expires_at=db_url.expires_at,
+        max_clicks=db_url.max_clicks,
+        tag=db_url.tag,
+        click_count=db_url.click_count,
+        custom_alias=db_url.custom_alias,
+    )
+
+
+def _record_click(db: Session, url: models.URL, request: Request) -> bool | None:
+    """Atomically claim and record a click; never break the redirect when
+    analytics storage fails.
+
+    Returns ``False`` when a concurrent redirect already consumed the last
+    allowed click (the guarded UPDATE declines this one), ``True`` when the
+    click was recorded, and ``None`` when recording failed (still redirect).
+    """
+    try:
+        return crud.record_click(
+            db,
+            url,
+            referrer=request.headers.get("referer"),
+            user_agent=request.headers.get("user-agent"),
+            ip_address=anonymize_ip(request.client.host if request.client else None),
+        )
+    except Exception:
+        logging.exception("Failed to record click")
+        # Still redirect even if analytics recording fails
+        return None
+
+
+def _claim_click_or_410(db: Session, url: models.URL, request: Request) -> None:
+    """Record a click, refusing the redirect when the atomic claim is declined."""
+    if _record_click(db, url, request) is False:
+        # A concurrent redirect may have consumed the final allowed click after
+        # the ORM row was read; the guarded UPDATE declines this request.
+        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
+
+
+def _check_redirectable(url: models.URL) -> None:
+    """Raise 410 if the link is dead (click limit reached or expired)."""
+    # Enforce the click limit BEFORE recording — never count a click that pushes
+    # a link past its cap, and never redirect a link that's already at/over it.
+    if url.max_clicks is not None and url.click_count >= url.max_clicks:
+        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
+    if crud.is_url_expired(url):
+        raise HTTPException(status_code=410, detail="This short URL has expired.")
 
 
 # ─── Routes ──────────────────────────────────────────────
@@ -275,13 +363,20 @@ async def serve_frontend():
 
 
 @app.post("/api/shorten", response_model=schemas.URLResponse)
-@limiter.limit("30/minute")
+@limiter.limit(RL_SHORTEN)
 async def shorten_url(
     request: Request,
     url_data: schemas.URLCreate,
+    auth: OptionalAuthUser,
     db: Session = Depends(get_db),
 ):
-    """Create a shortened URL."""
+    """Create a shortened URL.
+
+    Public — no auth required — but when the caller sends a valid Clerk token
+    the link is owned by that user (only they and admin-allowlisted users can
+    manage it). Anonymous links stay ownerless and are manageable by the admin
+    allowlist (TINYLNK_ADMIN_USER_IDS) only.
+    """
     # Validate custom alias if provided (case-insensitive reserved check)
     if url_data.custom_alias:
         if url_data.custom_alias.lower() in RESERVED_ALIASES:
@@ -319,40 +414,28 @@ async def shorten_url(
         )
 
     try:
-        db_url = crud.create_short_url(db, url_data)
+        db_url = crud.create_short_url(db, url_data, owner_id=auth["sub"] if auth else None)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
-    # Build the short URL
-    code = db_url.custom_alias or db_url.short_code
-
-    return schemas.URLResponse(
-        id=db_url.id,
-        original_url=db_url.original_url,
-        short_code=code,
-        short_url=f"{base_url}/{code}",
-        created_at=db_url.created_at,
-        expires_at=db_url.expires_at,
-        max_clicks=db_url.max_clicks,
-        tag=db_url.tag,
-        click_count=db_url.click_count,
-        custom_alias=db_url.custom_alias,
-    )
+    return _url_response(db_url, str(request.base_url).rstrip("/"))
 
 
 @app.put("/api/urls/{short_code}", response_model=schemas.URLResponse)
-@limiter.limit("30/minute")
+@limiter.limit(RL_UPDATE)
 async def update_url_endpoint(
     short_code: str,
     request: Request,
     update_data: schemas.URLUpdate,
-    _auth: AuthUser,
+    auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Update a shortened URL's properties (requires auth)."""
+    """Update a shortened URL's properties (requires auth + ownership)."""
 
     url = crud.get_url_by_code(db, short_code)
-    if not url:
+    # 404 (not 403) for anything the caller may not manage — do not confirm
+    # that another user's short code exists.
+    if not url or not crud.resolve_owner(url, auth["sub"], ADMIN_USER_IDS):
         raise HTTPException(status_code=404, detail="Short URL not found.")
 
     # Validate new URL if provided
@@ -384,37 +467,27 @@ async def update_url_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
-    base_url = str(request.base_url).rstrip("/")
-    code = updated.custom_alias or updated.short_code
-
-    return schemas.URLResponse(
-        id=updated.id,
-        original_url=updated.original_url,
-        short_code=code,
-        short_url=f"{base_url}/{code}",
-        created_at=updated.created_at,
-        expires_at=updated.expires_at,
-        max_clicks=updated.max_clicks,
-        tag=updated.tag,
-        click_count=updated.click_count,
-        custom_alias=updated.custom_alias,
-    )
+    return _url_response(updated, str(request.base_url).rstrip("/"))
 
 
 @app.get("/api/stats/{short_code}", response_model=schemas.URLStats)
-@limiter.limit("60/minute")
+@limiter.limit(RL_STATS)
 async def get_stats(
     short_code: str,
     request: Request,
-    _auth: AuthUser,
+    auth: AuthUser,
     start_date: str | None = Query(None, description="ISO date string for range start"),
     end_date: str | None = Query(None, description="ISO date string for range end"),
     db: Session = Depends(get_db),
 ):
-    """Get click analytics for a short URL, optionally filtered by date range."""
+    """Get click analytics for a short URL (requires auth + ownership)."""
 
     parsed_start = _parse_date(start_date)
     parsed_end = _parse_date(end_date)
+
+    url = crud.get_url_by_code(db, short_code)
+    if not url or not crud.resolve_owner(url, auth["sub"], ADMIN_USER_IDS):
+        raise HTTPException(status_code=404, detail="Short URL not found.")
 
     stats = crud.get_url_stats(db, short_code, parsed_start, parsed_end)
     if not stats:
@@ -423,19 +496,23 @@ async def get_stats(
 
 
 @app.get("/api/stats/{short_code}/export")
-@limiter.limit("30/minute")
+@limiter.limit(RL_EXPORT)
 async def export_stats(
     short_code: str,
     request: Request,
-    _auth: AuthUser,
+    auth: AuthUser,
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Export click analytics as CSV (requires auth)."""
+    """Export click analytics as CSV (requires auth + ownership)."""
 
     parsed_start = _parse_date(start_date)
     parsed_end = _parse_date(end_date)
+
+    url = crud.get_url_by_code(db, short_code)
+    if not url or not crud.resolve_owner(url, auth["sub"], ADMIN_USER_IDS):
+        raise HTTPException(status_code=404, detail="Short URL not found.")
 
     csv_data = crud.export_stats_csv(db, short_code, parsed_start, parsed_end)
     if csv_data is None:
@@ -451,66 +528,95 @@ async def export_stats(
 
 
 @app.get("/api/recent", response_model=list[schemas.URLResponse])
-@limiter.limit("60/minute")
+@limiter.limit(RL_RECENT)
 async def get_recent(
     request: Request,
-    _auth: AuthUser,
+    auth: AuthUser,
     search: str | None = Query(None, description="Search by URL, alias, or short code"),
     tag: str | None = Query(None, description="Filter by tag"),
+    limit: int = Query(100, ge=1, le=100, description="Max links to return (1-100)"),
+    offset: int = Query(0, ge=0, description="Skip this many links (pagination)"),
     db: Session = Depends(get_db),
 ):
-    """Get recently created URLs with optional search and tag filtering."""
-    urls = crud.get_recent_urls(db, search=search, tag=tag)
+    """Get this caller's recently created URLs, with search/tag/pagination.
+
+    Results are scoped to links the caller owns; TINYLNK_ADMIN_USER_IDS members
+    additionally see ownerless (legacy/anonymous) links.
+    """
+    creator_ip = request.client.host if request.client else None
+    urls = crud.get_recent_urls(
+        db,
+        search=search,
+        tag=tag,
+        limit=limit,
+        offset=offset,
+        owner_id=auth["sub"],
+        admin_ids=ADMIN_USER_IDS,
+        creator_ip=creator_ip,
+    )
     base_url = str(request.base_url).rstrip("/")
-    return [
-        schemas.URLResponse(
-            id=u.id,
-            original_url=u.original_url,
-            short_code=u.custom_alias or u.short_code,
-            short_url=f"{base_url}/{u.custom_alias or u.short_code}",
-            created_at=u.created_at,
-            expires_at=u.expires_at,
-            max_clicks=u.max_clicks,
-            tag=u.tag,
-            click_count=u.click_count,
-            custom_alias=u.custom_alias,
-        )
-        for u in urls
-    ]
+    return [_url_response(u, base_url) for u in urls]
 
 
 @app.get("/api/tags", response_model=list[str])
-@limiter.limit("60/minute")
+@limiter.limit(RL_TAGS)
 async def get_tags(
     request: Request,
-    _auth: AuthUser,
+    auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Get all unique tags (requires auth)."""
-    rows = db.query(models.URL.tag).filter(models.URL.tag.isnot(None)).distinct().all()
-    return [row[0] for row in rows if row[0]]
+    """Get unique tags across the links this caller can manage."""
+    creator_ip = request.client.host if request.client else None
+    return crud.get_distinct_tags(
+        db, owner_id=auth["sub"], admin_ids=ADMIN_USER_IDS, creator_ip=creator_ip
+    )
 
 
 @app.delete("/api/urls/{short_code}", status_code=204)
-@limiter.limit("20/minute")
+@limiter.limit(RL_DELETE)
 async def delete_url_endpoint(
     short_code: str,
     request: Request,
-    _auth: AuthUser,
+    auth: AuthUser,
     db: Session = Depends(get_db),
 ):
-    """Delete a shortened URL and its analytics (requires auth)."""
+    """Delete a shortened URL and its analytics (requires auth + ownership)."""
 
     if short_code.lower() in RESERVED_ALIASES:
         raise HTTPException(status_code=400, detail="Cannot delete reserved alias.")
 
-    success = crud.delete_url(db, short_code)
-    if not success:
+    url = crud.get_url_by_code(db, short_code)
+    if not url or not crud.resolve_owner(url, auth["sub"], ADMIN_USER_IDS):
         raise HTTPException(status_code=404, detail="Short URL not found.")
+
+    db.delete(url)
+    db.commit()
     return None
 
+
+@app.get("/__continue/{short_code}")
+@limiter.limit(RL_REDIRECT)
+async def continue_redirect(
+    short_code: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Second hop of the interstitial flow: record the click, then redirect.
+
+    Only used when TINYLNK_REDIRECT_WARNING=true — the warning page's Continue
+    button and meta-refresh land here, so a click is counted only when the
+    visitor actually proceeds, not when they merely saw the warning.
+    """
+    url = crud.get_url_by_code(db, short_code)
+    if not url:
+        raise HTTPException(status_code=404, detail="Short URL not found.")
+    _check_redirectable(url)
+    _claim_click_or_410(db, url, request)
+    return RedirectResponse(url=url.original_url, status_code=302)
+
+
 @app.get("/{short_code}")
-@limiter.limit("60/minute")
+@limiter.limit(RL_REDIRECT)
 async def redirect_to_url(
     short_code: str,
     request: Request,
@@ -525,43 +631,19 @@ async def redirect_to_url(
     if not url:
         raise HTTPException(status_code=404, detail="Short URL not found.")
 
-    # Enforce the click limit BEFORE recording — never count a click that pushes
-    # a link past its cap, and never redirect a link that's already at/over it.
-    if url.max_clicks is not None and url.click_count >= url.max_clicks:
-        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
+    _check_redirectable(url)
 
-    # Check expiration
-    if crud.is_url_expired(url):
-        raise HTTPException(status_code=410, detail="This short URL has expired.")
-
-    try:
-        # Record click (IP is anonymized before storage)
-        click_recorded = crud.record_click(
-            db,
-            url,
-            referrer=request.headers.get("referer"),
-            user_agent=request.headers.get("user-agent"),
-            ip_address=anonymize_ip(request.client.host if request.client else None),
-        )
-    except Exception:
-        logging.exception("Failed to record click")
-        # Still redirect even if analytics recording fails
-        click_recorded = None
-
-    # A concurrent redirect may have consumed the final allowed click after the
-    # ORM row was read. In that case the guarded UPDATE declines this request.
-    if click_recorded is False:
-        raise HTTPException(status_code=410, detail="This short URL has reached its click limit.")
-
-    # Optionally show an interstitial warning page before redirecting
+    # With the interstitial enabled, the click is recorded by /__continue
+    # (the visitor's actual departure), not by viewing the warning page.
     if REDIRECT_WARNING:
-        return HTMLResponse(content=_interstitial_page(url.original_url))
+        return HTMLResponse(content=_interstitial_page(url.original_url, short_code))
 
+    _claim_click_or_410(db, url, request)
     return RedirectResponse(url=url.original_url, status_code=302)
 
 
 @app.get("/api/qr/{short_code}")
-@limiter.limit("30/minute")
+@limiter.limit(RL_QR)
 async def get_qr_code(
     short_code: str,
     request: Request,

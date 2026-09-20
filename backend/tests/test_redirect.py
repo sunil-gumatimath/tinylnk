@@ -98,6 +98,7 @@ class TestErrorConditions:
         resp = client.post(
             "/api/shorten",
             json={"url": "https://example.com/maxed-out", "max_clicks": 3},
+            headers=auth_headers,
         )
         code = resp.json()["short_code"]
 

@@ -18,6 +18,11 @@ services:
       - TINYLNK_CORS_ORIGINS=${TINYLNK_CORS_ORIGINS:-http://localhost:8000}
       - TINYLNK_REDIRECT_WARNING=${TINYLNK_REDIRECT_WARNING:-false}
       - TINYLNK_ENABLE_DOCS=${TINYLNK_ENABLE_DOCS:-false}
+      # Hostname resolution for shorten-time SSRF checks (opt-in; costs a DNS
+      # lookup per shortened URL).
+      - TINYLNK_DNS_CHECK=${TINYLNK_DNS_CHECK:-false}
+      # Clerk user ids allowed to manage every link (incl. legacy ownerless rows).
+      - TINYLNK_ADMIN_USER_IDS=${TINYLNK_ADMIN_USER_IDS:-}
       # Backend JWT verification: issuer (or the publishable key it is derived
       # from). No secret key is used — keys come from Clerk's public JWKS.
       - CLERK_ISSUER=${CLERK_ISSUER:-}

@@ -552,6 +552,14 @@ a {
   gap: 16px;
 }
 
+/* "Load more" sits under the grid (grid children are cards, so it lives in a
+   wrapper with the grid's own gap). */
+.links-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
 .link-card-top {
   display: flex;
   justify-content: space-between;

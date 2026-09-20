@@ -1,8 +1,19 @@
 """Utility functions for URL shortening."""
 
 import ipaddress
+import os
+import socket
 import string
 from urllib.parse import urlparse
+
+# When true (set TINYLNK_DNS_CHECK=true), is_safe_url resolves hostnames via
+# DNS and rejects any that currently point at a blocked/private network. This
+# closes the "public domain that resolves to 169.254.169.254" hole, but note
+# the residual risk: the server never fetches destinations, only redirects
+# browsers, and DNS answers can differ per resolver (rebinding) — a domain that
+# resolves publicly for the server may resolve privately for the visitor. The
+# check stops the simple case; it cannot stop per-victim DNS answers.
+DNS_CHECK = os.getenv("TINYLNK_DNS_CHECK", "false").lower() == "true"
 
 
 def is_valid_alias(alias: str) -> bool:
@@ -65,6 +76,20 @@ def is_safe_url(url: str) -> bool:
         blocked_hosts = {"localhost", "metadata.google.internal"}
         if hostname.lower() in blocked_hosts:
             return False
+        if DNS_CHECK:
+            try:
+                infos = socket.getaddrinfo(hostname, None)
+            except socket.gaierror:
+                # Unresolvable hostnames make useless redirect targets.
+                return False
+            for info in infos:
+                addr_str = info[4][0]
+                try:
+                    addr = ipaddress.ip_address(addr_str)
+                except ValueError:
+                    return False
+                if any(addr in net for net in _BLOCKED_NETWORKS):
+                    return False
         return True
     except Exception:
         return False

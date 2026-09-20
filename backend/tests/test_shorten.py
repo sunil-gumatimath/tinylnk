@@ -476,6 +476,7 @@ class TestParameterValidation:
                 "expires_in_hours": 24,
                 "custom_alias": "clear-expiry-test",
             },
+            headers=auth_headers,
         )
         assert created.status_code == 200
         assert created.json()["expires_at"] is not None
@@ -498,6 +499,7 @@ class TestParameterValidation:
                 "url": "https://example.com/alias-clear",
                 "custom_alias": "alias-to-drop",
             },
+            headers=auth_headers,
         )
 
         updated = client.put(
@@ -519,6 +521,7 @@ class TestParameterValidation:
         client.post(
             "/api/shorten",
             json={"url": "https://example.com/keep-alias", "custom_alias": "keep-alias"},
+            headers=auth_headers,
         )
 
         updated = client.put(
@@ -537,6 +540,7 @@ class TestParameterValidation:
         created = client.post(
             "/api/shorten",
             json={"url": "https://example.com/limit", "max_clicks": 2},
+            headers=auth_headers,
         )
         code = created.json()["short_code"]
         assert created.json()["max_clicks"] == 2
@@ -572,10 +576,14 @@ class TestRecentSearchWildcardEscaping:
         """Searching '100%' finds only URLs containing the literal text, and a
         bare '%' does not act as a match-all wildcard."""
         client.post(
-            "/api/shorten", json={"url": "https://example.com/100%_discount"}
+            "/api/shorten",
+            json={"url": "https://example.com/100%_discount"},
+            headers=auth_headers,
         )
         client.post(
-            "/api/shorten", json={"url": "https://example.com/plain-offer"}
+            "/api/shorten",
+            json={"url": "https://example.com/plain-offer"},
+            headers=auth_headers,
         )
 
         response = client.get(
@@ -614,7 +622,9 @@ class TestRecentSearchWildcardEscaping:
     def test_search_plain_text_still_works(self, client, auth_headers: dict):
         """An ordinary text search still matches the target URL."""
         client.post(
-            "/api/shorten", json={"url": "https://example.com/docs-page"}
+            "/api/shorten",
+            json={"url": "https://example.com/docs-page"},
+            headers=auth_headers,
         )
 
         response = client.get(

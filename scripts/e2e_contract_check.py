@@ -103,7 +103,7 @@ class _JWKSHandler(BaseHTTPRequestHandler):
         pass
 
 
-def _jwt_token():
+def _jwt_token(sub="e2e_test_user"):
     """Create a valid RS256 Clerk JWT signed with the generated key."""
     from time import time
 
@@ -111,7 +111,7 @@ def _jwt_token():
     # time() is used as-is (no int() conversion that could be flagged/raise).
     now = time()
     claims = {
-        "sub": "e2e_test_user",
+        "sub": sub,
         "iat": now,
         "exp": now + 300,
         "iss": _CLERK_ISSUER,
@@ -125,6 +125,8 @@ def _jwt_token():
 
 
 AUTH_HEADER = {"Authorization": f"Bearer {_jwt_token()}"}
+# A second, distinct Clerk user — used to prove per-user ownership isolation.
+OTHER_USER_HEADER = {"Authorization": f"Bearer {_jwt_token('e2e_other_user')}"}
 
 # Start JWKS server
 _jwks_server = HTTPServer(("127.0.0.1", JWKS_PORT), _JWKSHandler)
@@ -154,7 +156,9 @@ proc = subprocess.Popen(
     env=env,
     cwd=_ROOT,
     stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
+    # Keep the server's output — when startup fails (e.g. a migration error)
+    # the traceback is the only way to tell why /api/health never comes up.
+    stderr=subprocess.PIPE,
 )
 
 
@@ -184,7 +188,23 @@ def check(label, condition, detail=""):
     status = "OK " if condition else "FAIL"
     print(f"[{status}] {label} {detail}")
     if not condition:
+        # Surface whatever the server printed — without it a failed startup
+        # makes the contract check look like a network problem.
+        _dump_server_log()
         raise SystemExit(f"e2e failed at: {label} {detail}")
+
+
+def _dump_server_log() -> None:
+    """Terminate the server and print its stderr so startup failures show up."""
+    proc.terminate()
+    try:
+        output = proc.stderr.read()
+    except Exception:
+        return
+    if output:
+        print("──── uvicorn stderr ────", flush=True)
+        sys.stdout.write(output.decode(errors="replace"))
+        print("────────────────────────", flush=True)
 
 
 try:
@@ -201,6 +221,7 @@ try:
     status, raw = call(
         "POST",
         "/api/shorten",
+        headers=AUTH_HEADER,
         body={
             "url": "https://example.com/e2e",
             "custom_alias": "e2e-check",
@@ -294,6 +315,44 @@ try:
         status == 200 and "clicked_at" in header_line,
         f"status={status} header={header_line}",
     )
+
+    # ─── Per-user ownership ───────────────────────────────────────────────
+    status, raw = call("GET", f"/api/stats/{code}", headers=OTHER_USER_HEADER)
+    check("other user cannot read another user's stats", status == 404, f"status={status}")
+
+    status, raw = call("GET", "/api/recent", headers=OTHER_USER_HEADER)
+    other_recent = json.loads(raw)
+    check(
+        "other user's recent list excludes foreign links",
+        all(item["short_code"] != code for item in other_recent),
+        f"count={len(other_recent)}",
+    )
+
+    status, raw = call(
+        "PUT", f"/api/urls/{code}", headers=OTHER_USER_HEADER, body={"tag": "hijack"}
+    )
+    check("other user cannot update a foreign link", status == 404, f"status={status}")
+
+    status, raw = call("DELETE", f"/api/urls/{code}", headers=OTHER_USER_HEADER)
+    check("other user cannot delete a foreign link", status == 404, f"status={status}")
+
+    # Anonymous links are ownerless: a signed-in user must not manage them either.
+    status, raw = call("POST", "/api/shorten", body={"url": "https://example.com/anon"})
+    anon_code = json.loads(raw)["short_code"]
+    status, raw = call("GET", f"/api/stats/{anon_code}", headers=AUTH_HEADER)
+    check("ownerless link is not manageable by a normal user", status == 404, f"status={status}")
+
+    # ─── Pagination ───────────────────────────────────────────────────────
+    status, raw = call("GET", "/api/recent?limit=1&offset=0", headers=AUTH_HEADER)
+    page = json.loads(raw)
+    check(
+        "recent honours limit",
+        status == 200 and len(page) == 1,
+        f"status={status} len={len(page)}",
+    )
+
+    status, raw = call("GET", "/api/recent?limit=101", headers=AUTH_HEADER)
+    check("recent rejects limit over 100", status == 422, f"status={status}")
 
     print("\nE2E OK — full contract verified over HTTP")
 finally:

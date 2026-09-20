@@ -30,8 +30,16 @@ def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
     return url
 
 
-def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
-    """Create a new shortened URL entry."""
+def create_short_url(
+    db: Session,
+    url_data: schemas.URLCreate,
+    owner_id: str | None = None,
+) -> models.URL:
+    """Create a new shortened URL entry.
+
+    ``owner_id`` is the Clerk sub of the creator (None when created while
+    signed out — anonymous links are managed per creator IP instead).
+    """
     expires_at = None
     if url_data.expires_in_hours:
         expires_at = datetime.now(timezone.utc) + timedelta(hours=url_data.expires_in_hours)
@@ -54,6 +62,7 @@ def create_short_url(db: Session, url_data: schemas.URLCreate) -> models.URL:
         # would make the link born-dead).
         max_clicks=url_data.max_clicks or None,
         tag=url_data.tag,
+        owner_id=owner_id,
     )
     db.add(db_url)
     db.flush()  # Get the auto-generated ID
@@ -204,9 +213,20 @@ def get_url_stats(
 
     total_clicks = base.with_entities(_sa_func.count(models.ClickEvent.id)).scalar() or 0
 
+    # Bucket by UTC calendar day. Plain SQL date() truncates in the *session*
+    # timezone on PostgreSQL, so a non-UTC session (or a future SET TIME ZONE)
+    # would silently shift chart buckets; timezone('UTC', ...) pins it.
+    if db.get_bind().dialect.name == "postgresql":
+        day_expr = _sa_func.date(
+            _sa_func.timezone("UTC", models.ClickEvent.clicked_at)
+        ).label("day")
+    else:
+        # SQLite has no session timezone — plain date() is UTC for our stored values.
+        day_expr = _sa_func.date(models.ClickEvent.clicked_at).label("day")
+
     date_rows = (
         base.with_entities(
-            _sa_func.date(models.ClickEvent.clicked_at).label("day"),
+            day_expr,
             _sa_func.count(models.ClickEvent.id).label("n"),
         )
         .group_by("day")
@@ -328,14 +348,44 @@ def export_stats_csv(
     return buf.getvalue()
 
 
+def _scoped_urls_query(
+    db: Session,
+    owner_id: str | None,
+    admin_ids: set[str] | None,
+    creator_ip: str | None,
+):
+    """Base URL query scoped to what ``owner_id`` is allowed to manage.
+
+    * Signed-in users see their own links; users in ``admin_ids`` (the
+      TINYLNK_ADMIN_USER_IDS allowlist) see everything, including legacy
+      ownerless rows — this is also how pre-ownership data stays manageable.
+    * ``creator_ip`` is only a fallback for genuinely anonymous callers
+      (``owner_id`` None): they can see ownerless links. A signed-in caller
+      must never be narrowed by their IP (and the test client's host is the
+      non-IP string "testclient", which would wrongly trigger that branch).
+    """
+    query = db.query(models.URL)
+    admin_ids = admin_ids or set()
+    if owner_id in admin_ids:
+        return query  # admins manage everything
+    if owner_id:
+        return query.filter(models.URL.owner_id == owner_id)
+    # Anonymous: only ownerless links (kept so the signature stays explicit).
+    return query.filter(models.URL.owner_id.is_(None))
+
+
 def get_recent_urls(
     db: Session,
     search: str | None = None,
     tag: str | None = None,
     limit: int = 100,
+    offset: int = 0,
+    owner_id: str | None = None,
+    admin_ids: set[str] | None = None,
+    creator_ip: str | None = None,
 ) -> list[models.URL]:
-    """Get the most recently created URLs, optionally filtered by search term or tag."""
-    query = db.query(models.URL)
+    """Get recently created URLs visible to this caller, optionally filtered."""
+    query = _scoped_urls_query(db, owner_id, admin_ids, creator_ip)
 
     if search:
         # Escape LIKE wildcards so user-supplied %, _, and \ are matched
@@ -351,7 +401,38 @@ def get_recent_urls(
     if tag:
         query = query.filter(models.URL.tag == tag)
 
-    return query.order_by(models.URL.created_at.desc()).limit(limit).all()
+    return query.order_by(models.URL.created_at.desc()).offset(offset).limit(limit).all()
+
+
+def get_distinct_tags(
+    db: Session,
+    owner_id: str | None = None,
+    admin_ids: set[str] | None = None,
+    creator_ip: str | None = None,
+) -> list[str]:
+    """Distinct non-empty tags across the links this caller can manage."""
+    query = _scoped_urls_query(db, owner_id, admin_ids, creator_ip)
+    rows = query.with_entities(models.URL.tag).filter(models.URL.tag.isnot(None)).distinct().all()
+    return [row[0] for row in rows if row[0]]
+
+
+def resolve_owner(
+    url: models.URL,
+    owner_id: str | None,
+    admin_ids: set[str] | None,
+) -> models.URL | None:
+    """Return *url* if the caller may manage it, else None (endpoints map
+    that to 404 so unauthorized users cannot even tell the link exists).
+
+    Ownerless (legacy/anonymous) links are manageable by admin-allowlisted
+    users only.
+    """
+    admin_ids = admin_ids or set()
+    if owner_id in admin_ids:
+        return url
+    if url.owner_id is not None and url.owner_id == owner_id:
+        return url
+    return None
 
 
 def is_url_expired(url: models.URL) -> bool:

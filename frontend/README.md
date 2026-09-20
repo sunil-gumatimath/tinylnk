@@ -10,6 +10,7 @@ From `frontend/`:
 - `bun run build` – type-check and build production bundle
 - `bun run preview` – preview production build
 - `bun run lint` – run ESLint
+- `node --experimental-strip-types --test tests/*.test.ts` – run the unit tests for the shared helpers in `src/ui.ts`
 
 ## Development
 

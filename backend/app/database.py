@@ -6,7 +6,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-default_db_path = os.path.join(PROJECT_ROOT, "urlshortener.db")
+# Local SQLite default matches .env.example / docker-compose: ./data/urlshortener.db
+default_db_path = os.path.join(PROJECT_ROOT, "data", "urlshortener.db")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 if DATABASE_URL:

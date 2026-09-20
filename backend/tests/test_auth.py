@@ -102,6 +102,7 @@ class TestProtectedEndpointsWithClerkToken:
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-delete"},
+            headers=auth_headers,
         )
         code = url.json()["short_code"]
         response = client.delete(f"/api/urls/{code}", headers=auth_headers)
@@ -111,6 +112,7 @@ class TestProtectedEndpointsWithClerkToken:
         url = client.post(
             "/api/shorten",
             json={"url": "https://example.com/to-update"},
+            headers=auth_headers,
         )
         code = url.json()["short_code"]
         response = client.put(
