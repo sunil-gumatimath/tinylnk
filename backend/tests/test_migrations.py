@@ -156,14 +156,16 @@ class TestPostgresMigrationPath:
     def test_postgres_uses_if_not_exists_forms(self):
         """Postgres supports ADD COLUMN IF NOT EXISTS — used to survive
         concurrent serverless cold starts racing the same migration."""
-        add_column, create_index = models.add_owner_id_statements("postgresql")
+        add_column = str(models._OWNER_ID_ADD_COLUMN["postgresql"])
+        create_index = str(models._OWNER_ID_CREATE_INDEX["postgresql"])
         assert "IF NOT EXISTS" in add_column
         assert "IF NOT EXISTS" in create_index
-        assert "owner_id" in add_column and models.OWNER_ID_INDEX in create_index
+        assert "owner_id" in add_column and "ix_urls_owner_id" in create_index
 
     def test_sqlite_avoids_unsupported_add_column_if_not_exists(self):
         """SQLite rejects ADD COLUMN IF NOT EXISTS, so its form must not use it."""
-        add_column, create_index = models.add_owner_id_statements("sqlite")
+        add_column = str(models._OWNER_ID_ADD_COLUMN["sqlite"])
+        create_index = str(models._OWNER_ID_CREATE_INDEX["sqlite"])
         assert "IF NOT EXISTS" not in add_column
         assert "IF NOT EXISTS" in create_index  # CREATE INDEX does support it
 
@@ -171,11 +173,11 @@ class TestPostgresMigrationPath:
         """Both statements must be valid compiled PostgreSQL DDL."""
         from sqlalchemy.dialects import postgresql
 
-        add_column, create_index = models.add_owner_id_statements("postgresql")
+        add_column = str(models._OWNER_ID_ADD_COLUMN["postgresql"])
+        create_index = str(models._OWNER_ID_CREATE_INDEX["postgresql"])
         for ddl in (add_column, create_index):
             compiled = str(text(ddl).compile(dialect=postgresql.dialect()))
             assert "owner_id" in compiled
-
 
 class TestSelfHealingBootstrap:
     """The recorded version must never overstate the actual schema."""

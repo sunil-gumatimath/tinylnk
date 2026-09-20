@@ -22,7 +22,6 @@ dependencies = [
 dev = [
   "httpx",
   "pytest",
-  "pytest-asyncio",
   "ruff",
 ]
 

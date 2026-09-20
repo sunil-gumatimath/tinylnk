@@ -84,9 +84,6 @@ _MIGRATION_SQL = {
     "advisory_lock": text("SELECT pg_advisory_xact_lock(:key)"),
 }
 
-#: Name of the index on urls.owner_id, shared by the model and the migration.
-OWNER_ID_INDEX = "ix_urls_owner_id"
-
 #: DDL for the v1 -> v2 ownership upgrade, pre-built per dialect. Built once
 #: from string literals and executed by dictionary lookup — never assembled from
 #: a variable at execution time, so no identifier can be interpolated into a
@@ -127,17 +124,6 @@ _TIMESTAMPTZ_ALTER = {
         "TYPE TIMESTAMP WITH TIME ZONE USING upgraded_at AT TIME ZONE 'UTC'"
     ),
 }
-
-
-def add_owner_id_statements(dialect: str) -> tuple[str, str]:
-    """SQL for the v1 -> v2 column and index, tailored to *dialect*.
-
-    Returns plain strings for readability and tests; ``_ensure_owner_id``
-    executes the pre-built clauses above directly.
-    """
-    add_column = _OWNER_ID_ADD_COLUMN.get(dialect, _OWNER_ID_ADD_COLUMN["sqlite"])
-    create_index = _OWNER_ID_CREATE_INDEX.get(dialect, _OWNER_ID_CREATE_INDEX["sqlite"])
-    return str(add_column), str(create_index)
 
 
 def _ensure_owner_id(db: Session) -> None:

@@ -301,35 +301,22 @@ class TestUpdateUrl:
 
 
 # ---------------------------------------------------------------------------
-# delete_url
+# delete cascades
 # ---------------------------------------------------------------------------
 
-class TestDeleteUrl:
-    """Tests for ``crud.delete_url``."""
-
-    def test_delete_url_removes_it(self, db_session: Session):
-        url = crud.create_short_url(
-            db_session, schemas.URLCreate(url="https://example.com/to-delete"),
-        )
-        assert crud.get_url_by_code(db_session, url.short_code) is not None
-
-        deleted = crud.delete_url(db_session, url.short_code)
-        assert deleted is True
-        assert crud.get_url_by_code(db_session, url.short_code) is None
-
-    def test_delete_nonexistent_returns_false(self, db_session: Session):
-        assert crud.delete_url(db_session, "ghost") is False
+class TestDeleteCascades:
+    """Deleting a URL cascades to remove its click events."""
 
     def test_delete_cascades_clicks(self, db_session: Session):
         """Deleting a URL also removes its click events."""
         url = crud.create_short_url(
             db_session, schemas.URLCreate(url="https://example.com/cascade"),
         )
-        # Record a click
         crud.record_click(db_session, url)
         assert db_session.query(models.ClickEvent).count() == 1
 
-        crud.delete_url(db_session, url.short_code)
+        db_session.delete(url)
+        db_session.commit()
         assert db_session.query(models.ClickEvent).count() == 0
 
     def test_record_click_does_not_exceed_limit(self, db_session: Session):

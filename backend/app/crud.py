@@ -448,16 +448,3 @@ def is_url_expired(url: models.URL) -> bool:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) > expires_at
 
-
-def delete_url(db: Session, short_code: str) -> bool:
-    """Delete a URL by its short code or custom alias.
-
-    Returns True if the URL was found and deleted, False otherwise.
-    """
-    url = get_url_by_code(db, short_code)
-    if not url:
-        return False
-
-    db.delete(url)
-    db.commit()
-    return True
