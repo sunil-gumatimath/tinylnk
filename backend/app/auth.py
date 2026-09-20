@@ -26,10 +26,15 @@ def _derive_issuer() -> str:
             return explicit
 
     pk = (
-        os.environ.get("CLERK_PUBLISHABLE_KEY")
-        or os.environ.get("VITE_CLERK_PUBLISHABLE_KEY")
-        or ""
-    ).strip().strip('"').strip("'")
+        (
+            os.environ.get("CLERK_PUBLISHABLE_KEY")
+            or os.environ.get("VITE_CLERK_PUBLISHABLE_KEY")
+            or ""
+        )
+        .strip()
+        .strip('"')
+        .strip("'")
+    )
     if pk.startswith("pk_"):
         b64 = pk.split("_", 2)[-1]
         padded = b64 + "=" * (4 - len(b64) % 4)
@@ -110,12 +115,24 @@ def optional_auth(request: Request) -> dict | None:
 
     Used by public endpoints (shorten) so signed-in users get ownership
     attached to their links while anonymous users keep working.
+
+    When a Bearer token IS sent but cannot be verified (expired session,
+    wrong Clerk instance, JWKS unreachable), the request is treated as
+    anonymous — and the created link is stored ownerless, which makes it
+    invisible on the caller's dashboard. That outcome is logged as a warning
+    so orphaned links are diagnosable instead of silent.
     """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        user_id = verify_clerk_token(auth_header.removeprefix("Bearer "))
+        token = auth_header.removeprefix("Bearer ")
+        user_id = verify_clerk_token(token)
         if user_id:
             return {"sub": user_id}
+        logger.warning(
+            "Ignoring unverifiable Bearer token on a public endpoint; "
+            "the request proceeds as anonymous and any created link will "
+            "be ownerless (invisible on dashboards)."
+        )
     return None
 
 

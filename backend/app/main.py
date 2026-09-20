@@ -36,6 +36,8 @@ from .database import SessionLocal, get_db
 from .logging_config import RequestLogMiddleware, setup_logging
 from .utils import anonymize_ip, is_safe_url, is_valid_alias
 
+logger = logging.getLogger(__name__)
+
 # Configure structured logging (reads LOG_LEVEL / LOG_FORMAT / SENTRY_DSN env vars)
 setup_logging()
 
@@ -437,6 +439,16 @@ async def shorten_url(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
+    # Attribution line for dashboard debugging: if this says "anonymous" while
+    # the user believed they were signed in, the Bearer token was missing or
+    # unverifiable (see the auth warning) and the link will not appear on
+    # their dashboard. The destination URL itself is never logged.
+    code = db_url.custom_alias or db_url.short_code
+    if auth:
+        logger.info("Created short link %s owned by %s", code, auth["sub"])
+    else:
+        logger.info("Created short link %s with no owner (anonymous)", code)
+
     return _url_response(db_url, str(request.base_url).rstrip("/"))
 
 
@@ -569,8 +581,29 @@ async def get_recent(
         owner_id=auth["sub"],
         admin_ids=ADMIN_USER_IDS,
     )
+    logger.info(
+        "Recent links for %s: %d returned (search=%s tag=%s offset=%d)",
+        auth["sub"],
+        len(urls),
+        search,
+        tag,
+        offset,
+    )
     base_url = str(request.base_url).rstrip("/")
     return [_url_response(u, base_url) for u in urls]
+
+
+@app.get("/api/me")
+async def get_me(auth: AuthUser):
+    """Return the Clerk user id the backend sees for this caller.
+
+    Diagnostic helper for an empty dashboard: compare this ``sub`` with the
+    ``owner_id`` values in the database (``scripts/migrate_db.py --check``
+    reports owned vs ownerless counts). A 401 here means the backend rejects
+    the frontend's token — links created in that state are stored ownerless
+    and stay invisible to everyone except TINYLNK_ADMIN_USER_IDS members.
+    """
+    return {"sub": auth["sub"]}
 
 
 @app.get("/api/tags", response_model=list[str])

@@ -145,6 +145,7 @@ class TestInvalidCredentials:
     ):
         """All protected endpoints reject a bogus Bearer token with 401."""
         endpoints = [
+            ("/api/me", "get"),
             ("/api/recent", "get"),
             ("/api/stats/somecode", "get"),
             ("/api/stats/somecode/export", "get"),
@@ -223,6 +224,81 @@ class TestInvalidCredentials:
             headers={"Authorization": "Bearer bad-token"},
         )
         assert response.status_code == 401
+
+
+class TestMeEndpoint:
+    """GET /api/me reports the caller identity the backend verified."""
+
+    def test_me_with_valid_token_returns_sub(self, client: TestClient, auth_headers: dict):
+        response = client.get("/api/me", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() == {"sub": "user_test_123"}
+
+    def test_me_without_auth_returns_401(self, client: TestClient):
+        assert client.get("/api/me").status_code == 401
+
+    def test_me_with_garbage_token_returns_401(self, client: TestClient):
+        response = client.get("/api/me", headers={"Authorization": "Bearer not-a-real-token"})
+        assert response.status_code == 401
+
+
+class TestUnverifiableTokenOnPublicEndpoints:
+    """A Bearer token that cannot be verified on /api/shorten must not fail
+    the request (anonymous creation still works), but it must leave a warning
+    in the logs — otherwise the resulting ownerless link silently vanishes
+    from the caller's dashboard with no trace of why."""
+
+    def test_shorten_with_garbage_token_stays_public_but_warns(self, client: TestClient, caplog):
+        with caplog.at_level("WARNING", logger="app.auth"):
+            response = client.post(
+                "/api/shorten",
+                json={"url": "https://example.com/orphan"},
+                headers={"Authorization": "Bearer not-a-real-token"},
+            )
+        assert response.status_code == 200
+        assert any("unverifiable" in record.message for record in caplog.records), (
+            "expected a warning about the unverifiable Bearer token"
+        )
+
+    def test_shorten_without_token_logs_no_warning(self, client: TestClient, caplog):
+        with caplog.at_level("WARNING", logger="app.auth"):
+            response = client.post("/api/shorten", json={"url": "https://example.com/anon"})
+        assert response.status_code == 200
+        assert not any("unverifiable" in record.message for record in caplog.records)
+
+
+class TestOwnershipAttributionLogs:
+    """Create/list log lines name the owner so an empty dashboard is
+    diagnosable from the backend terminal alone."""
+
+    def test_shorten_with_auth_logs_owner(self, client, auth_headers, caplog):
+        with caplog.at_level("INFO", logger="app.main"):
+            response = client.post(
+                "/api/shorten",
+                json={"url": "https://example.com/owned"},
+                headers=auth_headers,
+            )
+        assert response.status_code == 200
+        assert any("owned by user_test_123" in r.message for r in caplog.records)
+
+    def test_shorten_anonymous_logs_no_owner(self, client, caplog):
+        with caplog.at_level("INFO", logger="app.main"):
+            response = client.post("/api/shorten", json={"url": "https://example.com/anon"})
+        assert response.status_code == 200
+        assert any("no owner" in r.message for r in caplog.records)
+
+    def test_recent_logs_sub_and_count(self, client, auth_headers, caplog):
+        client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/owned"},
+            headers=auth_headers,
+        )
+        with caplog.at_level("INFO", logger="app.main"):
+            response = client.get("/api/recent", headers=auth_headers)
+        assert response.status_code == 200
+        assert any(
+            "user_test_123" in r.message and "1 returned" in r.message for r in caplog.records
+        )
 
 
 class TestErrorMessage:
