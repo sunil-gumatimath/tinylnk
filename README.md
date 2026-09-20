@@ -11,8 +11,8 @@
 
 tinylnk converts long URLs into short, shareable links with detailed click
 analytics. FastAPI serves the API and the compiled React application from one
-origin. Local and self-hosted installations default to SQLite, while serverless
-Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
+origin. Every deployment — Vercel, Docker, or local — uses PostgreSQL through a
+Neon-compatible `DATABASE_URL`; SQLite backs the unit-test suite only.
 
 ## Features
 
@@ -56,7 +56,7 @@ Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 | Layer | Technology |
 | --- | --- |
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy, Uvicorn, SlowAPI |
-| **Database** | SQLite (local/Docker) or PostgreSQL (Neon/Vercel) |
+| **Database** | PostgreSQL (Neon or any Postgres) |
 | **Frontend** | React 19, TypeScript, Vite |
 | **UI** | Ant Design 6, Recharts, Lucide Icons, Framer Motion |
 | **Authentication** | Clerk session JWTs verified through public JWKS |
@@ -67,7 +67,7 @@ Vercel deployments use PostgreSQL through a Neon-compatible `DATABASE_URL`.
 ### Vercel + Neon PostgreSQL
 
 Deployed via `vercel.json` with `DATABASE_URL` (Neon PostgreSQL) set in the
-Vercel project environment. SQLite is bypassed entirely.
+Vercel project environment.
 
 **Schema migrations on Neon.** The app runs `create_all` + the schema-version
 bootstrap on every cold start, so a schema upgrade applies itself when the new
@@ -110,16 +110,18 @@ docker compose up -d --build
 
 Visit `http://localhost:8000` in your browser.
 
-The default uses the persistent SQLite file `./data/urlshortener.db`. To enable
-sign-in, set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_ISSUER` in `.env`, then
-rebuild with `docker compose up -d --build`; the browser key is embedded in the
-frontend bundle at build time. See [Configuration](#configuration).
+The container is stateless: set `DATABASE_URL` in `.env` to a PostgreSQL/Neon
+connection string before starting it. To enable sign-in, also set
+`VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_ISSUER`, then rebuild with
+`docker compose up -d --build`; the browser key is embedded in the frontend
+bundle at build time. See [Configuration](#configuration).
 
 ### Manual Setup
 
 Requirements: Python 3.12 and [Bun](https://bun.sh/). The repository also
 includes a locked [uv](https://docs.astral.sh/uv/) environment; `pip` remains
-supported through `backend/requirements.txt`.
+supported through `backend/requirements.txt`. The backend will not start until
+`DATABASE_URL` points at a PostgreSQL/Neon database.
 
 **Backend** (from the repository root):
 
@@ -146,8 +148,8 @@ Open `http://localhost:5173`. Vite proxies `/api` requests to the backend at
 
 Vercel runs the FastAPI application declared by `[tool.vercel]` in
 `pyproject.toml`, builds `frontend/dist`, and serves the frontend and API from
-the same deployment. Vercel's filesystem is ephemeral, so production
-deployments deliberately refuse to fall back to SQLite.
+the same deployment. Vercel's filesystem is ephemeral and tinylnk is
+PostgreSQL-only, so the app refuses to start without `DATABASE_URL`.
 
 1. Create a Neon PostgreSQL database. Copy its pooled connection string; it
    should look like `postgresql://user:password@host/database?sslmode=require`.
@@ -302,8 +304,7 @@ Copy `.env.example` to `.env` and customise:
 
 | Environment Variable | Default | Description |
 | --- | --- | --- |
-| `SQLITE_DB_PATH` | `./data/urlshortener.db` | Local SQLite path, resolved relative to the repository root. Docker overrides it with `/app/data/urlshortener.db`. |
-| `DATABASE_URL` | *(empty)* | PostgreSQL/Neon connection URL (psycopg 3). Required on Vercel; when set, it takes precedence over `SQLITE_DB_PATH` and SQLite is bypassed entirely. |
+| `DATABASE_URL` | *(required)* | PostgreSQL/Neon connection URL (psycopg 3). Required in every environment; keep `sslmode=require` and prefer Neon's pooled connection string. |
 | `TINYLNK_ADMIN_KEY` | *(empty)* | **Deprecated.** This setting has no effect — authentication is handled exclusively by Clerk JWT. Remove it from your configuration. |
 | `TINYLNK_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed CORS origins |
 | `TINYLNK_REDIRECT_WARNING` | `false` | Show an interstitial warning page before redirecting to external URLs (click counted only on continue) |
@@ -359,7 +360,7 @@ tinylnk/
 │   │                        # StatsModal, QrModal, ClerkShell, LinkIcon
 │   ├── package.json
 │   └── vite.config.ts
-├── scripts/                 # Backup/restore + end-to-end contract check
+├── scripts/                 # Schema migration + end-to-end contract check
 ├── deploy/                  # Deployment notes and Caddyfile
 ├── Dockerfile
 ├── docker-compose.yml
@@ -372,42 +373,26 @@ tinylnk/
 
 - **Short Code Generation** — Uses `secrets.token_urlsafe(6)` for cryptographically random, non-enumerable codes with collision checking.
 - **Static Serving** — In production, FastAPI serves the built React app directly, eliminating the need for a separate web server.
-- **Database Selection** — `DATABASE_URL` selects PostgreSQL through psycopg 3; otherwise the app uses SQLite (`sqlite:///./data/urlshortener.db` by default). Vercel requires `DATABASE_URL`, while local and Docker installations can remain self-contained with SQLite.
-- **SQLite Concurrency** — WAL mode and a 5s busy-timeout keep readers responsive, but SQLite remains a single-writer store. Use PostgreSQL for serverless or higher-concurrency deployments.
-- **Neon Connections** — PostgreSQL connections use `NullPool`, allowing Neon's pooler to own connection reuse instead of retaining idle connections across serverless invocations.
-- **Schema Bootstrap** — SQLAlchemy creates missing tables and stamps/advances the `schema_version` row at startup. Older databases are upgraded in place (v1 → v2 adds per-user ownership, `urls.owner_id`); on PostgreSQL the upgrade serializes on an advisory lock and uses `IF NOT EXISTS` DDL, so concurrent serverless cold starts are safe. Stale databases stamped *newer* than the running build fail loudly instead of misbehaving. See `scripts/migrate_db.py` to apply or verify a migration out-of-band.
+- **Database Selection** — PostgreSQL over psycopg 3, configured by `DATABASE_URL`. It is required everywhere (Vercel, Docker, local): the app raises a clear error at startup instead of falling back to SQLite. SQLite is used only by the unit tests, behind the test-only `TINYLNK_TESTING=1` flag.
+- **Neon Connections** — PostgreSQL connections use `NullPool` and disable psycopg auto-prepared statements, letting Neon's pooler own connection reuse instead of retaining idle connections across serverless invocations.
+- **Schema Bootstrap** — SQLAlchemy creates missing tables and stamps/advances the `schema_version` row at startup. Older databases are upgraded in place (v1 → v2 adds per-user ownership, `urls.owner_id`; v2 → v3 rewrites the timestamps to `timestamptz` so stored values are true instants). The whole upgrade — table creation, reflection and DDL — runs on one advisory-locked connection, so concurrent serverless cold starts cannot race each other. Stale databases stamped *newer* than the running build fail loudly instead of misbehaving. See `scripts/migrate_db.py` to apply or verify a migration out-of-band.
 - **Click Limits** — The counter and limit check are performed in one guarded database update, so concurrent redirects cannot consume more clicks than configured.
 - **Per-user Ownership** — Management endpoints are scoped to the caller's Clerk user id (or `TINYLNK_ADMIN_USER_IDS` for admins); foreign links return `404` so their existence is not leaked. Links created while signed out are ownerless and admin-managed.
-- **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics stay in the configured SQLite or PostgreSQL database; tinylnk does not include third-party tracking.
+- **Privacy** — IP addresses are anonymized (the last IPv4 octet is zeroed) before storage. Analytics stay in your PostgreSQL database; tinylnk does not include third-party tracking.
 - **Rate Limiting** — SlowAPI limits each sensitive endpoint, configurable via `TINYLNK_RATE_LIMIT_*` env vars. Defaults: shortening (30/min), updates (30/min), analytics and recent queries (60/min), tag listing (60/min), CSV export (30/min), deletion (20/min), redirects (**600/min**), QR generation (**120/min**) and the interstitial continue hop (600/min). Redirect and QR limits are deliberately high: a single shared link or printed QR code can put many visitors behind one NAT/corporate egress IP.
 
 ## Backups
 
-The bundled backup and restore scripts apply only to SQLite installations.
-They snapshot the database file on a loop with retention pruning:
+For Neon/PostgreSQL, use Neon restore points or branches, or `pg_dump`:
 
 ```bash
-# Nightly backup via cron (host machine, Docker setup)
-0 2 * * * SQLITE_DB_PATH=/app/data/urlshortener.db BACKUP_DIR=/app/backups /path/to/tinylnk/scripts/backup.sh
-
-# Or as a Compose sidecar (runs alongside `app`, shares the data volume)
-backup:
-  image: alpine:3
-  volumes:
-    - ./data:/app/data
-    - ./backups:/app/backups
-    - ./scripts/backup.sh:/backup.sh:ro
-  environment:
-    - SQLITE_DB_PATH=/app/data/urlshortener.db
-    - BACKUP_DIR=/app/backups
-    - BACKUP_INTERVAL=86400
-  command: ["sh", "/backup.sh"]
+pg_dump "$DATABASE_URL" --format=custom --file=tinylnk-$(date +%F).dump
+# restore into an empty database
+pg_restore --clean --if-exists --dbname="$DATABASE_URL" tinylnk-$(date +%F).dump
 ```
 
-Restore with `scripts/restore.sh <backup-file>` (stops writers first — see the script header).
-
-For Neon/PostgreSQL, use Neon restore points, branches, or `pg_dump`; do not run
-the SQLite backup scripts against `DATABASE_URL`.
+The legacy `scripts/backup.*` and `scripts/restore.*` helpers are SQLite-only
+and no longer apply to the application database.
 
 ## Testing and Quality Checks
 
@@ -436,16 +421,25 @@ frontend production build, and a Docker health check on pushes and pull
 requests to `main`. Tags matching `v*` build and publish a container image to
 GitHub Container Registry.
 
+The backend requires `DATABASE_URL`, so the test suite boots with
+`TINYLNK_TESTING=1` plus a throwaway `sqlite:///` URL. That flag is the only
+way SQLite can be selected, and it is ignored in every non-test process. To run
+the suite against PostgreSQL instead — exercising the production dialect and the
+real bootstrap/migration path — set `TEST_DATABASE_URL` to a disposable
+database whose name contains `test` (a Neon branch named `tinylnk_test`, for
+example). Tests truncate their tables, so that guard is what keeps a mis-set
+value away from production.
+
 ## Production Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Deployment fails during import/startup | Confirm `DATABASE_URL` exists in the affected Vercel environment and is a PostgreSQL URL. |
+| Deployment fails during import/startup | `DATABASE_URL` is required everywhere — confirm it is set and is a PostgreSQL URL ending in `sslmode=require`. |
 | `/api/health` returns `503` | Check Neon availability, connection-string credentials, `sslmode`, and whether the Neon project is suspended. |
 | Frontend loads but API calls fail | Request `/api/health` directly, inspect Vercel function logs, and confirm the deployment includes both the Python entrypoint and `frontend/dist`. |
 | Sign-in succeeds but management calls return `401` | Ensure the frontend key and `CLERK_ISSUER` belong to the same Clerk instance; redeploy after changing `VITE_CLERK_PUBLISHABLE_KEY`. |
 | Docker Compose reports a missing env file | Copy `.env.example` to `.env` before starting the service. |
-| Existing database is rejected at startup | Its `schema_version` differs from the code. Migrate it explicitly; do not delete production data. |
+| Existing database is rejected at startup | Its `schema_version` differs from the code. Run `scripts/migrate_db.py` to migrate it explicitly; do not delete production data. |
 
 ## Security
 
