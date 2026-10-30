@@ -1,6 +1,6 @@
 # tinylnk
 
-> A self-hosted, full-stack URL shortener with built-in analytics, link management, and a polished dashboard.
+> A self-hosted URL shortener for creating, managing, and measuring links on your own server.
 
 ![Open Source](https://img.shields.io/badge/Open%20Source-Free%20to%20use-brightgreen.svg)
 ![Python](https://img.shields.io/badge/python-3.12-green.svg)
@@ -9,10 +9,10 @@
 
 ## Overview
 
-tinylnk converts long URLs into short, shareable links with detailed click
-analytics. FastAPI serves the API and the compiled React application from one
-origin. Every deployment — Vercel, Docker, or local — uses PostgreSQL through a
-Neon-compatible `DATABASE_URL`; SQLite backs the unit-test suite only.
+tinylnk turns long URLs into short links you can share, manage, and track. It
+includes custom aliases, QR codes, click analytics, and optional sign-in. The
+FastAPI API and React app run from one origin. All runtime deployments use
+PostgreSQL through `DATABASE_URL`; SQLite is reserved for the unit-test suite.
 
 ## Features
 
@@ -24,7 +24,7 @@ Neon-compatible `DATABASE_URL`; SQLite backs the unit-test suite only.
 - **Click Limits** — Cap the maximum number of clicks per link
 - **Tagging** — Organize links with custom tags for easy categorization
 - **Dark/Light Theme** — Toggle between themes with persistent preference
-- **Optional Clerk Sign-in** — With a Clerk key configured, the dashboard is gated behind sign-in: anyone can still shorten a link, but editing, deleting, and analytics require an authenticated session
+- **Optional sign-in** — Configure Clerk to require sign-in for link management and analytics. Link creation remains available without signing in.
 - **Per-user link ownership** — Links created while signed in belong to that user; other signed-in users cannot see or touch them (see [Ownership](#ownership))
 
 ### Analytics
