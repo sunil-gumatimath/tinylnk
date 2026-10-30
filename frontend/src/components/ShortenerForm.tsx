@@ -12,6 +12,9 @@ import {
 import type { FormInstance } from "antd/es/form";
 import { validateAliasInput } from "../ui";
 import type { ShortenFormValues, ShortenedURL } from "../types";
+import { CornerTicks } from "./CornerTicks";
+import { UrlFavicon } from "./UrlFavicon";
+import { SectionGridLines } from "./SectionGridLines";
 
 interface ShortenerFormProps {
 	form: FormInstance<ShortenFormValues>;
@@ -58,13 +61,16 @@ export function ShortenerForm({
 
 	return (
 		<section id="shorten-form" className="composer-section">
-			<div className="section-heading">
-				<h2>Create a short link</h2>
-				<p>Paste your destination URL. Customize your link with the optional settings.</p>
-			</div>
+			<SectionGridLines top={false} bottom={true} highlightCorner="none" />
+			<div className="section-container">
+				<div className="section-heading">
+					<h2>Create a short link</h2>
+					<p>Paste your destination URL. Customize your link with the optional settings.</p>
+				</div>
 
-			<div className="composer-layout">
-				<div className="panel-surface composer-panel">
+				<div className="composer-layout">
+				<div className="panel-surface composer-panel has-corner-ticks">
+					<CornerTicks />
 					{error ? (
 						<Alert
 							className="form-error"
@@ -201,16 +207,22 @@ export function ShortenerForm({
 					style={{ display: "flex", flexDirection: "column" }}
 				>
 					{result ? (
-						<div className="result-panel panel-surface result-panel--flex">
+						<div className="result-panel panel-surface result-panel--flex has-corner-ticks">
+							<CornerTicks />
 							<div className="result-header">
 								<span className="result-badge">Short link</span>
 								<span className="result-title">
 									Your short link
 								</span>
 							</div>
-							<div className="result-link">{getShortUrl(result)}</div>
-							<div className="result-origin truncate-text">
-								{result.original_url}
+							<div className="result-link-box">
+								<UrlFavicon url={result.original_url} size={36} />
+								<div className="result-link-content">
+									<div className="result-link">{getShortUrl(result)}</div>
+									<div className="result-origin truncate-text">
+										{result.original_url}
+									</div>
+								</div>
 							</div>
 							<div className="result-actions">
 								<Button
@@ -236,7 +248,8 @@ export function ShortenerForm({
 							</div>
 						</div>
 					) : (
-						<div className="empty-state--centered panel-surface">
+						<div className="empty-state--centered panel-surface has-corner-ticks">
+							<CornerTicks />
 							<Sparkles
 								size={40}
 								strokeWidth={1}
@@ -250,6 +263,7 @@ export function ShortenerForm({
 						</div>
 					)}
 				</div>
+			</div>
 			</div>
 		</section>
 	);

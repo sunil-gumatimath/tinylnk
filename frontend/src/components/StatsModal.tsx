@@ -6,6 +6,7 @@ import { chartColors as chartPalettes } from '../theme';
 import { useTheme } from '../ThemeProvider';
 import { errorText, readJson, saveBlob } from '../ui';
 import type { UrlStats } from '../types';
+import { UrlFavicon } from './UrlFavicon';
 import type { Dayjs } from 'dayjs';
 
 const { RangePicker } = DatePicker;
@@ -69,7 +70,8 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
-  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => setRange(dates && dates[0] && dates[1] ? dates : null);
+  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) =>
+    setRange(dates && (dates[0] || dates[1]) ? dates : null);
 
   const handleExport = async () => {
     if (!stats) return;
@@ -122,8 +124,13 @@ export default function StatsModal({ shortCode, currentShortUrl, onClose, getAut
           <section className="stats-overview">
             <div className="stats-hero panel-surface">
               <span className="panel-label">Summary</span>
-              <h3>{currentShortUrl}</h3>
-              <p>{stats.original_url}</p>
+              <div className="stats-hero-heading">
+                <UrlFavicon url={stats.original_url} size={36} />
+                <div className="stats-hero-text">
+                  <h3>{currentShortUrl}</h3>
+                  <p className="truncate-text">{stats.original_url}</p>
+                </div>
+              </div>
             </div>
 
             <div className="stats-kpis">

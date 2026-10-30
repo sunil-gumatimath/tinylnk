@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { ShortenedURL } from '../types';
 import { linkStatus } from '../ui';
+import { UrlFavicon } from './UrlFavicon';
 
 interface LinkCardProps {
   record: ShortenedURL;
@@ -62,16 +63,19 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
   return (
     <article className="link-card panel-surface">
       <div className="link-card-head">
-        <a
-          href={shortUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="link-short"
-          title={shortUrl}
-        >
-          <span className="link-short-code">{record.short_code}</span>
-          <ExternalLink size={13} className="link-short-icon" />
-        </a>
+        <div className="link-head-left">
+          <UrlFavicon url={record.original_url} size={28} />
+          <a
+            href={shortUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link-short"
+            title={shortUrl}
+          >
+            <span className="link-short-code">{record.short_code}</span>
+            <ExternalLink size={13} className="link-short-icon" />
+          </a>
+        </div>
         <div className="link-head-right">
           <Tag bordered={false} className={`meta-tag status-tag ${statusClass}`}>
             <span className="status-dot" aria-hidden />

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Alert, Button, Form, Input, InputNumber, Modal } from 'antd';
 import { Pencil } from 'lucide-react';
-import { validateAliasInput } from '../ui';
+import { validateAliasInput, validateDestination } from '../ui';
 import type { ShortenedURL } from '../types';
 
 interface EditModalProps {
@@ -54,6 +54,7 @@ export function EditModal({ open, loading, record, error, onSave, onClose }: Edi
     <Modal
       open={open}
       onCancel={onClose}
+      destroyOnClose
       width={520}
       title={
         <div className="modal-title">
@@ -82,7 +83,10 @@ export function EditModal({ open, loading, record, error, onSave, onClose }: Edi
         <Form.Item
           name="original_url"
           label="Destination URL"
-          rules={[{ required: true, message: 'Enter the destination URL.' }]}
+          rules={[
+            { required: true, message: 'Enter the destination URL.' },
+            { validator: validateDestination },
+          ]}
         >
           <Input placeholder="https://example.com/..." />
         </Form.Item>

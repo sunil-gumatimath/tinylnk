@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { SignInButton, UserButton } from "@clerk/react";
+import { SignInButton } from "@clerk/react";
 import { CLERK_ENABLED, useAppAuth } from "./clerk";
 import { LazyMotion, MotionConfig, domAnimation, motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,12 +11,15 @@ import {
 	Layout,
 	Select,
 	Skeleton,
-	Spin,
 	Typography,
 } from "antd";
-import { Activity, FolderOpen, Link2, LogIn, MousePointerClick, RefreshCw, ScanQrCode, Search, Sun, Moon } from "lucide-react";
+import { Activity, FolderOpen, Link2, LogIn, MousePointerClick, RefreshCw, ScanQrCode, Search } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
+import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
+import { StatsStrip } from "./components/StatsStrip";
+import { CornerTicks } from "./components/CornerTicks";
+import { SectionGridLines } from "./components/SectionGridLines";
 import { LinkCard } from "./components/LinkCard";
 import { EditModal } from "./components/EditModal";
 import { QrModal } from "./components/QrModal";
@@ -189,7 +192,20 @@ function App() {
 
 	const handleCopy = async (text: string) => {
 		try {
-			await navigator.clipboard.writeText(text);
+			if (navigator.clipboard && window.isSecureContext) {
+				await navigator.clipboard.writeText(text);
+			} else {
+				const textarea = document.createElement("textarea");
+				textarea.value = text;
+				textarea.style.position = "fixed";
+				textarea.style.opacity = "0";
+				document.body.appendChild(textarea);
+				textarea.focus();
+				textarea.select();
+				const successful = document.execCommand("copy");
+				textarea.remove();
+				if (!successful) throw new Error("Fallback copy failed");
+			}
 			message.success("Copied to clipboard.");
 			return true;
 		} catch {
@@ -280,6 +296,7 @@ function App() {
 
 			message.success("Link deleted.");
 			setRecentLinks((prev) => prev.filter((l) => l.short_code !== shortCode));
+			setResult((prev) => (prev?.short_code === shortCode ? null : prev));
 		} catch (error) {
 			console.error("Failed to delete", error);
 			message.error("Could not delete the link. Check your connection and try again.");
@@ -382,44 +399,21 @@ function App() {
 		<MotionConfig reducedMotion="user">
 			<LazyMotion features={domAnimation}>
 				<Layout className={`app-layout ${isDark ? "dark" : "light"}`}>
-					{/* ─── Header ─────────────────────────────────────────────── */}
-					<header className="app-header">
-						<div className="header-inner">
-							<a href="/" className="logo" aria-label="tinylnk home">
-								<Logo size="md" />
-							</a>
-							<nav className="header-links" aria-label="Page sections">
-								<a href="#shorten-form">Create</a>
-								<a href="#dashboard">Dashboard</a>
-								<a className="header-link-features" href="#features">Features</a>
-							</nav>
-							<nav className="header-nav" aria-label="Account and appearance">
-								<button
-									className="theme-toggle"
-									onClick={toggleTheme}
-									aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-								>
-									{isDark ? <Sun size={18} /> : <Moon size={18} />}
-								</button>
-								{authLoading ? (
-									<Spin size="small" />
-								) : isSignedIn ? (
-									<UserButton />
-								) : CLERK_ENABLED ? (
-									<SignInButton mode="modal">
-										<Button type="primary" ghost>
-											Sign in
-										</Button>
-									</SignInButton>
-								) : null}
-							</nav>
-						</div>
-					</header>
+					{/* ─── Header (Watermelon UI Landing-01 Matching) ─── */}
+					<Navbar
+						isDark={isDark}
+						onToggleTheme={toggleTheme}
+						isSignedIn={isSignedIn}
+						authLoading={authLoading}
+					/>
 
 					<Content className="app-content" id="main-content">
 						<div className="content-wrapper">
 							{/* ─── Hero ──────────────────────────────────────────────── */}
 							<Hero />
+
+							{/* ─── Specifications Strip ───────────────────────────────── */}
+							<StatsStrip />
 
 							<ShortenerForm
 								form={form}
@@ -440,6 +434,8 @@ function App() {
 							/>
 
 							<div id="dashboard" className="dashboard-anchor">
+								<SectionGridLines top={false} bottom={true} highlightCorner="none" />
+								<div className="section-container">
 							{/* Signed-out visitors can still shorten links, but the
 							    dashboard (search, cards, analytics) needs auth — say so
 							    instead of silently hiding it. */}
@@ -570,7 +566,7 @@ function App() {
 													<AnimatePresence mode="popLayout">
 												{recentLinks.map((link, index) => (
 													<motion.div
-														key={link.short_code}
+														key={link.id}
 														custom={index}
 														variants={cardVariants}
 														initial="hidden"
@@ -609,46 +605,99 @@ function App() {
 									)}
 								</motion.section>
 							)}
+								</div>
 							</div>
 
 							<section className="features-section" id="features" aria-labelledby="features-title">
-								<header className="features-heading">
-									<span className="section-kicker"><span aria-hidden="true">//</span> CAPABILITIES</span>
+								<SectionGridLines top={false} bottom={true} highlightCorner="none" />
+								<div className="section-container">
+									<header className="features-heading">
+										<span className="section-kicker"><span aria-hidden="true">//</span> CAPABILITIES</span>
 										<h2 id="features-title">More than shorter links</h2>
 										<p>Choose a memorable address, share it as a QR code, and see how people use it.</p>
-								</header>
-								<div className="features-grid">
-									<article className="feature-card feature-card--alias">
-										<span className="feature-icon"><Link2 size={18} /></span>
-										<div>
-											<span className="feature-label">CUSTOM ALIASES</span>
-											<h3>Choose your own link name</h3>
-											<p>Replace a random code with a name that’s easy to recognize and share.</p>
-										</div>
-									</article>
-									<article className="feature-card">
-										<span className="feature-icon"><ScanQrCode size={18} /></span>
-										<div>
-											<span className="feature-label">QR SHARING</span>
-											<h3>Share links in print</h3>
-											<p>Download a QR code for any short link and choose its colors.</p>
-										</div>
-									</article>
-									<article className="feature-card feature-card--analytics">
-										<span className="feature-icon"><Activity size={18} /></span>
-										<div>
-											<span className="feature-label">CLICK ANALYTICS</span>
-											<h3>Understand your traffic</h3>
-											<p>Review click trends, browsers, operating systems, referring sites, and individual visits.</p>
-										</div>
-									</article>
+									</header>
+									<div className="features-grid">
+										<article className="feature-card feature-card--alias has-corner-ticks">
+											<CornerTicks />
+											<span className="feature-icon"><Link2 size={18} /></span>
+											<div>
+												<span className="feature-label">CUSTOM ALIASES</span>
+												<h3>Choose your own link name</h3>
+												<p>Replace a random code with a name that’s easy to recognize and share.</p>
+											</div>
+										</article>
+										<article className="feature-card has-corner-ticks">
+											<CornerTicks />
+											<span className="feature-icon"><ScanQrCode size={18} /></span>
+											<div>
+												<span className="feature-label">QR SHARING</span>
+												<h3>Share links in print</h3>
+												<p>Download a QR code for any short link and choose its colors.</p>
+											</div>
+										</article>
+										<article className="feature-card feature-card--analytics has-corner-ticks">
+											<CornerTicks />
+											<span className="feature-icon"><Activity size={18} /></span>
+											<div>
+												<span className="feature-label">CLICK ANALYTICS</span>
+												<h3>Understand your traffic</h3>
+												<p>Review click trends, browsers, operating systems, referring sites, and individual visits.</p>
+											</div>
+										</article>
+									</div>
 								</div>
 							</section>
 
 							<footer className="site-footer">
-								<a href="#top" className="footer-brand" aria-label="Back to top"><Logo size="sm" /></a>
-							<span className="footer-note">SELF-HOSTED LINK SHORTENER</span>
-								<a href="https://github.com/sunil-gumatimath/tinylnk" target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>
+								<SectionGridLines top={false} bottom={false} highlightCorner="none" />
+								<div className="section-container">
+									<div className="footer-frame">
+										<span className="crosshair ch-tl" aria-hidden="true" />
+										<span className="crosshair ch-tr" aria-hidden="true" />
+										<span className="crosshair ch-bl" aria-hidden="true" />
+										<span className="crosshair ch-br" aria-hidden="true" />
+
+										<div className="footer-top">
+											<div className="footer-brand-col">
+												<a href="#top" className="footer-brand" aria-label="tinylnk home">
+													<Logo size="md" />
+												</a>
+												<p className="footer-desc">
+													Modern, fast, self-hosted link management with real-time analytics and QR code generation.
+												</p>
+											</div>
+
+											<div className="footer-links-grid">
+												<div className="footer-col">
+													<span className="footer-col-title">NAVIGATION</span>
+													<a href="#shorten-form">Create short link</a>
+													<a href="#dashboard">Dashboard</a>
+													<a href="#features">Capabilities</a>
+												</div>
+												<div className="footer-col">
+													<span className="footer-col-title">TECH STACK</span>
+													<span className="footer-spec-item">FastAPI backend</span>
+													<span className="footer-spec-item">Neon PostgreSQL</span>
+													<span className="footer-spec-item">React 19 + Vite</span>
+												</div>
+												<div className="footer-col">
+													<span className="footer-col-title">PROJECT</span>
+													<a href="https://github.com/sunil-gumatimath/tinylnk" target="_blank" rel="noopener noreferrer">
+														GitHub Repository ↗
+													</a>
+													<a href="https://github.com/sunil-gumatimath/tinylnk/issues" target="_blank" rel="noopener noreferrer">
+														Report an Issue ↗
+													</a>
+												</div>
+											</div>
+										</div>
+
+										<div className="footer-bottom">
+											<span className="footer-note">SELF-HOSTED LINK SHORTENER // OPEN SOURCE</span>
+											<span className="footer-mono-tag">v1.0.0</span>
+										</div>
+									</div>
+								</div>
 							</footer>
 
 							{/* ─── Modals ─────────────────────────────────────────────── */}
