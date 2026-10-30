@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Alert, Button, Form, Input, InputNumber, Modal } from 'antd';
 import { Pencil } from 'lucide-react';
+import { validateAliasInput } from '../ui';
 import type { ShortenedURL } from '../types';
 
 interface EditModalProps {
@@ -90,6 +91,7 @@ export function EditModal({ open, loading, record, error, onSave, onClose }: Edi
           name="custom_alias"
           label="Custom alias"
           extra="Use 3–50 letters, numbers, hyphens, or underscores. Changing or removing an alias stops the old alias from working; update any links or QR codes you have shared."
+          rules={[{ validator: validateAliasInput }]}
         >
           <Input placeholder="my-link" />
         </Form.Item>

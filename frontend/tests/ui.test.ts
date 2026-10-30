@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
 	resolveExpiry,
 	normalizeUrl,
+	isValidAlias,
 	linkStatus,
 	isReadableQr,
 	readJson,
@@ -65,4 +66,14 @@ test('readJson maps API errors to user-facing text', async () => {
 		await fail(new Response('gateway timeout', { status: 502 })),
 		'Request failed (502). Please try again.',
 	);
+});
+
+test('isValidAlias validates alias syntax', () => {
+	assert.equal(isValidAlias('my-alias'), true);
+	assert.equal(isValidAlias('abc_123'), true);
+	assert.equal(isValidAlias('ab'), false);
+	assert.equal(isValidAlias('a'.repeat(51)), false);
+	assert.equal(isValidAlias('has space'), false);
+	assert.equal(isValidAlias('special!'), false);
+	assert.equal(isValidAlias(''), false);
 });

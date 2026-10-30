@@ -10,6 +10,7 @@ import {
 	Sparkles,
 } from "lucide-react";
 import type { FormInstance } from "antd/es/form";
+import { validateAliasInput } from "../ui";
 import type { ShortenFormValues, ShortenedURL } from "../types";
 
 interface ShortenerFormProps {
@@ -127,7 +128,12 @@ export function ShortenerForm({
 
 						{showAdvanced ? (
 							<div className="advanced-grid" id="advanced-options">
-								<Form.Item name="custom_alias" label="Custom alias (optional)" extra="Choose the text after the slash: 3–50 letters, numbers, hyphens, or underscores.">
+								<Form.Item
+									name="custom_alias"
+									label="Custom alias (optional)"
+									extra="Choose the text after the slash: 3–50 letters, numbers, hyphens, or underscores."
+									rules={[{ validator: validateAliasInput }]}
+								>
 									<Input placeholder="spring-launch" />
 								</Form.Item>
 								<Form.Item

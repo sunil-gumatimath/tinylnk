@@ -29,6 +29,18 @@ export async function validateDestination(_rule: unknown, value: string) {
   }
 }
 
+export function isValidAlias(value: string): boolean {
+  if (!value || value.length < 3 || value.length > 50) return false;
+  return /^[a-zA-Z0-9-_]+$/.test(value);
+}
+
+export async function validateAliasInput(_rule: unknown, value: string) {
+  if (!value?.trim()) return;
+  if (!isValidAlias(value.trim())) {
+    throw new Error('Use 3–50 letters, numbers, hyphens, or underscores.');
+  }
+}
+
 export async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
