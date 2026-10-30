@@ -12,7 +12,8 @@ const fadeUp = {
 
 export function Hero() {
 	return (
-		<section className="hero-section">
+		<section className="hero-section" id="top">
+			<div className="hero-frame" aria-hidden="true" />
 			<div className="hero-copy">
 				<motion.div
 					className="hero-badge"
@@ -21,8 +22,8 @@ export function Hero() {
 					initial="hidden"
 					animate="visible"
 				>
-					<Sparkles size={14} />
-					<span>Open-source · self-hosted</span>
+					<span className="hero-marker" aria-hidden="true">//</span>
+					<span>SELF-HOSTED LINK SHORTENER</span>
 				</motion.div>
 
 				<motion.h1
@@ -31,8 +32,9 @@ export function Hero() {
 					initial="hidden"
 					animate="visible"
 				>
-					Shorten links.{" "}
-					<span className="text-gradient">Make sharing simple.</span>
+					Short links.
+					<br />
+					<span className="text-gradient">Clear insights.</span>
 				</motion.h1>
 
 				<motion.p
@@ -42,20 +44,33 @@ export function Hero() {
 					initial="hidden"
 					animate="visible"
 				>
-					Create short links and share them as URLs or QR codes.
-					Self-host tinylnk to manage links and view click analytics on your server.
+					Create short links, share them anywhere, and track clicks from your own server.
 				</motion.p>
 
 				<motion.div
-					className="hero-features"
+					className="hero-actions"
 					custom={3}
+					variants={fadeUp}
+					initial="hidden"
+					animate="visible"
+				>
+					<a className="hero-cta" href="#shorten-form">
+						Create a short link
+						<ArrowDownRight size={16} />
+					</a>
+					<a className="hero-secondary" href="#features">Explore features</a>
+				</motion.div>
+
+				<motion.div
+					className="hero-features"
+					custom={4}
 					variants={fadeUp}
 					initial="hidden"
 					animate="visible"
 				>
 					<div className="hero-feature">
 						<ShieldCheck size={16} />
-						<span>Click analytics</span>
+						<span>Click tracking</span>
 					</div>
 					<div className="hero-feature">
 						<Sparkles size={16} />

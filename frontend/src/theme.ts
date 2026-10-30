@@ -1,21 +1,25 @@
 import { theme, type ThemeConfig } from 'antd';
 
-export const chartColors = ['#1d4ed8', '#f97316', '#0891b2', '#10b981', '#7c3aed', '#ef4444', '#f59e0b'];
+export const chartColors = {
+  dark: ['#a3ff12', '#fb923c', '#60a5fa', '#4ade80', '#c084fc', '#f87171', '#facc15'],
+  light: ['#4d7c0f', '#c2410c', '#1d4ed8', '#047857', '#6d28d9', '#b91c1c', '#a16207'],
+};
 
 export const getAppTheme = (isDark: boolean): ThemeConfig => ({
   algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
   token: {
-    colorPrimary: '#1d4ed8',
-    colorInfo: '#1d4ed8',
-    colorSuccess: '#059669',
-    colorWarning: '#d97706',
-    colorError: '#dc2626',
-    colorTextBase: isDark ? '#e2e8f0' : '#14213d',
-    colorBgBase: isDark ? '#0f172a' : '#f5efe4',
-    colorBgLayout: isDark ? '#0f172a' : '#f5efe4',
-    colorBgContainer: isDark ? '#1e293b' : '#fffaf2',
-    colorBgElevated: isDark ? '#1e293b' : '#fffdf8',
-    colorBorder: isDark ? '#334155' : '#d8cfc0',
+    colorPrimary: isDark ? '#a3ff12' : '#4d7c0f',
+    colorInfo: isDark ? '#60a5fa' : '#1d4ed8',
+    colorSuccess: isDark ? '#4ade80' : '#15803d',
+    colorWarning: isDark ? '#facc15' : '#854d0e',
+    colorError: isDark ? '#f87171' : '#b91c1c',
+    colorTextBase: isDark ? '#fafafa' : '#0a0a0a',
+    colorTextLightSolid: isDark ? '#101010' : '#ffffff',
+    colorBgBase: isDark ? '#101010' : '#ffffff',
+    colorBgLayout: isDark ? '#101010' : '#ffffff',
+    colorBgContainer: isDark ? '#171717' : '#ffffff',
+    colorBgElevated: isDark ? '#171717' : '#ffffff',
+    colorBorder: isDark ? 'rgba(255, 255, 255, 0.12)' : '#e5e5e5',
     // One control-height scale for every form control (Input, Select, Picker,
     // InputNumber, Button) so neighbours in a toolbar line up. Per-component
     // controlHeight overrides (Button 46, Input 48, Select/Picker falling back
@@ -23,13 +27,13 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
     controlHeight: 44,
     controlHeightLG: 48,
     controlHeightSM: 32,
-    borderRadius: 14,
-    fontFamily: "'Manrope', 'Segoe UI', sans-serif",
+    borderRadius: 4,
+    fontFamily: "'Inter', 'Segoe UI', sans-serif",
     fontSize: 15,
   },
   components: {
     Layout: {
-      bodyBg: isDark ? '#0f172a' : '#f5efe4',
+      bodyBg: isDark ? '#101010' : '#ffffff',
       headerBg: 'transparent',
       footerBg: 'transparent',
       siderBg: 'transparent',
@@ -38,19 +42,19 @@ export const getAppTheme = (isDark: boolean): ThemeConfig => ({
       fontWeight: 700,
     },
     Input: {
-      activeBorderColor: '#1d4ed8',
-      hoverBorderColor: '#3b82f6',
+      activeBorderColor: isDark ? '#a3ff12' : '#4d7c0f',
+      hoverBorderColor: isDark ? '#baff52' : '#3f6212',
     },
     Modal: {
-      borderRadiusLG: 24,
-      contentBg: isDark ? '#1e293b' : '#fffdf8',
+      borderRadiusLG: 4,
+      contentBg: isDark ? '#171717' : '#ffffff',
       headerBg: 'transparent',
     },
     Popconfirm: {
-      borderRadiusLG: 16,
+      borderRadiusLG: 4,
     },
     Form: {
-      labelColor: isDark ? '#94a3b8' : '#5b6475',
+      labelColor: isDark ? '#a1a1a1' : '#525252',
     },
   },
 });

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { App as AntdApp, Button, DatePicker, Modal } from 'antd';
 import { BarChart2, Calendar, Download, Globe, Monitor, MousePointerClick, Target } from 'lucide-react';
 import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { chartColors } from '../theme';
+import { chartColors as chartPalettes } from '../theme';
+import { useTheme } from '../ThemeProvider';
 import { errorText, readJson, saveBlob } from '../ui';
 import type { UrlStats } from '../types';
 import type { Dayjs } from 'dayjs';
@@ -20,6 +21,8 @@ interface StatsModalProps {
 
 export default function StatsModal({ shortCode, currentShortUrl, onClose, getAuthHeaders }: StatsModalProps) {
   const { message } = AntdApp.useApp();
+  const { isDark } = useTheme();
+  const chartColors = chartPalettes[isDark ? 'dark' : 'light'];
   const [stats, setStats] = useState<UrlStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -14,13 +14,14 @@ import {
 	Spin,
 	Typography,
 } from "antd";
-import { Activity, FolderOpen, Link2, LogIn, MousePointerClick, RefreshCw, Search, Sun, Moon } from "lucide-react";
+import { Activity, FolderOpen, Link2, LogIn, MousePointerClick, RefreshCw, ScanQrCode, Search, Sun, Moon } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { Hero } from "./components/Hero";
 import { LinkCard } from "./components/LinkCard";
 import { EditModal } from "./components/EditModal";
 import { QrModal } from "./components/QrModal";
 import { ShortenerForm } from "./components/ShortenerForm";
+import { Logo } from "./components/Logo";
 import { errorText, linkStatus, normalizeUrl, readJson, resolveExpiry, validateDestination } from "./ui";
 
 const StatsModal = lazy(() => import("./components/StatsModal"));
@@ -384,9 +385,14 @@ function App() {
 					{/* ─── Header ─────────────────────────────────────────────── */}
 					<header className="app-header">
 						<div className="header-inner">
-							<a href="/" className="logo">
-								tinylnk
+							<a href="/" className="logo" aria-label="tinylnk home">
+								<Logo size="md" />
 							</a>
+							<nav className="header-links" aria-label="Page sections">
+								<a href="#shorten-form">Create</a>
+								<a href="#dashboard">Dashboard</a>
+								<a className="header-link-features" href="#features">Features</a>
+							</nav>
 							<nav className="header-nav" aria-label="Account and appearance">
 								<button
 									className="theme-toggle"
@@ -433,6 +439,7 @@ function App() {
 								getShortUrl={getShortUrl}
 							/>
 
+							<div id="dashboard" className="dashboard-anchor">
 							{/* Signed-out visitors can still shorten links, but the
 							    dashboard (search, cards, analytics) needs auth — say so
 							    instead of silently hiding it. */}
@@ -445,7 +452,7 @@ function App() {
 								>
 									<div className="empty-state panel-surface">
 										<LogIn size={44} />
-										<Title level={4}>Manage this server’s links</Title>
+										<Title level={4}>Manage your links</Title>
 
 										<Paragraph className="dashboard-subtitle">
 											You can create a short link without signing in. Authorized users can sign in to edit links and view click analytics.
@@ -602,6 +609,47 @@ function App() {
 									)}
 								</motion.section>
 							)}
+							</div>
+
+							<section className="features-section" id="features" aria-labelledby="features-title">
+								<header className="features-heading">
+									<span className="section-kicker"><span aria-hidden="true">//</span> CAPABILITIES</span>
+										<h2 id="features-title">More than shorter links</h2>
+										<p>Choose a memorable address, share it as a QR code, and see how people use it.</p>
+								</header>
+								<div className="features-grid">
+									<article className="feature-card feature-card--alias">
+										<span className="feature-icon"><Link2 size={18} /></span>
+										<div>
+											<span className="feature-label">CUSTOM ALIASES</span>
+											<h3>Choose your own link name</h3>
+											<p>Replace a random code with a name that’s easy to recognize and share.</p>
+										</div>
+									</article>
+									<article className="feature-card">
+										<span className="feature-icon"><ScanQrCode size={18} /></span>
+										<div>
+											<span className="feature-label">QR SHARING</span>
+											<h3>Share links in print</h3>
+											<p>Download a QR code for any short link and choose its colors.</p>
+										</div>
+									</article>
+									<article className="feature-card feature-card--analytics">
+										<span className="feature-icon"><Activity size={18} /></span>
+										<div>
+											<span className="feature-label">CLICK ANALYTICS</span>
+											<h3>Understand your traffic</h3>
+											<p>Review click trends, browsers, operating systems, referring sites, and individual visits.</p>
+										</div>
+									</article>
+								</div>
+							</section>
+
+							<footer className="site-footer">
+								<a href="#top" className="footer-brand" aria-label="Back to top"><Logo size="sm" /></a>
+							<span className="footer-note">SELF-HOSTED LINK SHORTENER</span>
+								<a href="https://github.com/sunil-gumatimath/tinylnk" target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>
+							</footer>
 
 							{/* ─── Modals ─────────────────────────────────────────────── */}
 							{statsModalVisible && statsCode && (

@@ -11,7 +11,7 @@ type ThemeContextType = {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 /** Keeps the browser chrome (mobile URL bar) in step with the app theme. */
-const THEME_COLOR = { dark: '#0f172a', light: '#f5efe4' };
+const THEME_COLOR = { dark: '#101010', light: '#ffffff' };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(() => {
