@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { App as AntdApp, Button, Modal } from 'antd';
 import { QrCode } from 'lucide-react';
 import { isReadableQr, saveBlob } from '../ui';
@@ -50,9 +50,13 @@ export function QrModal({ open, shortCode, onClose }: QrModalProps) {
     ? `/api/qr/${encodeURIComponent(shortCode)}?fg=${active.fg}&bg=${active.bg}`
     : null;
   const downloadName = `tinylnk-qr-${shortCode || 'code'}.png`;
+  const [prevQrSrc, setPrevQrSrc] = useState(qrSrc);
   const [imageFailed, setImageFailed] = useState(false);
   // Reset the preview-error state whenever the rendered QR changes.
-  useEffect(() => setImageFailed(false), [qrSrc]);
+  if (qrSrc !== prevQrSrc) {
+    setPrevQrSrc(qrSrc);
+    setImageFailed(false);
+  }
 
   const handleDownload = async () => {
     if (!qrSrc) return;

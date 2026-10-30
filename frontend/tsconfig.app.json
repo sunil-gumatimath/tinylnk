@@ -28,10 +28,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"],
-  "exclude": [
-    "src/components/base-variants",
-    "src/components/watermelon-ui",
-    "src/components/templates"
-  ]
+  "include": ["src"]
 }

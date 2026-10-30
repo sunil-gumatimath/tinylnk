@@ -720,8 +720,9 @@ async def get_qr_code(
     short_url = f"{base_url}/{code}"
 
     # Convert hex values (e.g. "1d4ed8" → "#1d4ed8")
-    fg_color = f"#{fg}" if len(fg) in (3, 6) and all(c in "0123456789abcdefABCDEF" for c in fg) else fg
-    bg_color = f"#{bg}" if len(bg) in (3, 6) and all(c in "0123456789abcdefABCDEF" for c in bg) else bg
+    _hex = "0123456789abcdefABCDEF"
+    fg_color = f"#{fg}" if len(fg) in (3, 6) and all(c in _hex for c in fg) else fg
+    bg_color = f"#{bg}" if len(bg) in (3, 6) and all(c in _hex for c in bg) else bg
 
     # Reject unknown color names/values with 400 instead of a 500 from PIL
     for name, value in (("fg", fg_color), ("bg", bg_color)):
