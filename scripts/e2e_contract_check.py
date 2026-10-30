@@ -360,6 +360,100 @@ try:
     status, raw = call("GET", "/api/recent?limit=101", headers=AUTH_HEADER)
     check("recent rejects limit over 100", status == 422, f"status={status}")
 
+    # ─── Tags & Tag Filtering ─────────────────────────────────────────────
+    status, raw = call(
+        "POST",
+        "/api/shorten",
+        headers=AUTH_HEADER,
+        body={"url": "https://example.com/tagged", "tag": "campaign-2026"},
+    )
+    tagged_code = json.loads(raw)["short_code"]
+    check("create tagged link", status == 200, f"status={status}")
+
+    status, raw = call("GET", "/api/tags", headers=AUTH_HEADER)
+    tags_list = json.loads(raw)
+    check("tags endpoint lists tag", "campaign-2026" in tags_list, f"tags={tags_list}")
+
+    status, raw = call("GET", "/api/recent?tag=campaign-2026", headers=AUTH_HEADER)
+    filtered = json.loads(raw)
+    check(
+        "recent filters by tag",
+        len(filtered) >= 1 and filtered[0]["short_code"] == tagged_code,
+        f"count={len(filtered)}",
+    )
+
+    status, raw = call("GET", "/api/recent?search=tagged", headers=AUTH_HEADER)
+    searched = json.loads(raw)
+    check(
+        "recent searches by query",
+        any(item["short_code"] == tagged_code for item in searched),
+        f"count={len(searched)}",
+    )
+
+    # ─── QR Code Generation ───────────────────────────────────────────────
+    status, qr_bytes = call("GET", f"/api/qr/{tagged_code}")
+    check(
+        "qr code generates PNG",
+        status == 200 and qr_bytes.startswith(b"\x89PNG"),
+        f"status={status} len={len(qr_bytes)}",
+    )
+
+    status, qr_custom = call("GET", f"/api/qr/{tagged_code}?fg=1d4ed8&bg=ffffff")
+    check(
+        "qr code with custom colors",
+        status == 200 and qr_custom.startswith(b"\x89PNG"),
+        f"status={status}",
+    )
+
+    # ─── Click Limit Enforcement (410 Gone) ───────────────────────────────
+    status, raw = call(
+        "POST",
+        "/api/shorten",
+        headers=AUTH_HEADER,
+        body={"url": "https://example.com/limited", "max_clicks": 1},
+    )
+    limit_code = json.loads(raw)["short_code"]
+    # First visit (should redirect 302)
+    req1 = urllib.request.Request(f"{BASE}/{limit_code}")
+    try:
+        with no_redirect.open(req1) as resp:
+            s1 = resp.status
+    except urllib.error.HTTPError as exc:
+        s1 = exc.code
+    check("first visit redirects (302)", s1 in (301, 302, 307), f"status={s1}")
+
+    # Second visit (should return 410 Gone)
+    req2 = urllib.request.Request(f"{BASE}/{limit_code}")
+    try:
+        with no_redirect.open(req2) as resp:
+            s2 = resp.status
+    except urllib.error.HTTPError as exc:
+        s2 = exc.code
+    check("click limit reached returns 410 Gone", s2 == 410, f"status={s2}")
+
+    # ─── Owner Delete Operation ───────────────────────────────────────────
+    status, _ = call("DELETE", f"/api/urls/{tagged_code}", headers=AUTH_HEADER)
+    check("owner delete succeeds (204)", status == 204, f"status={status}")
+
+    status, _ = call("GET", f"/api/stats/{tagged_code}", headers=AUTH_HEADER)
+    check("deleted link stats return 404", status == 404, f"status={status}")
+
+    req_del = urllib.request.Request(f"{BASE}/{tagged_code}")
+    try:
+        with no_redirect.open(req_del) as resp:
+            s_del = resp.status
+    except urllib.error.HTTPError as exc:
+        s_del = exc.code
+    check("deleted link redirect returns 404", s_del == 404, f"status={s_del}")
+
+    status, raw = call("GET", "/api/recent", headers=AUTH_HEADER)
+    recent_after_del = json.loads(raw)
+    check(
+        "deleted link removed from recent list",
+        all(item["short_code"] != tagged_code for item in recent_after_del),
+        f"found={any(item['short_code'] == tagged_code for item in recent_after_del)}",
+    )
+
     print("\nE2E OK — full contract verified over HTTP")
 finally:
     _jwks_server.shutdown()
