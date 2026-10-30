@@ -20,6 +20,17 @@ export function normalizeUrl(value: string): string {
   return parsed.href;
 }
 
+export function extractDomain(url?: string): string {
+  if (!url) return '';
+  try {
+    const hasProtocol = /^https?:\/\//i.test(url.trim());
+    const parsed = new URL(hasProtocol ? url.trim() : `https://${url.trim()}`);
+    return parsed.hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
 export async function validateDestination(_rule: unknown, value: string) {
   if (!value?.trim()) return;
   try {
@@ -59,8 +70,8 @@ export function errorText(error: unknown): string {
 }
 
 export function linkStatus(record: Pick<ShortenedURL, 'expires_at' | 'max_clicks' | 'click_count'>, now = Date.now()) {
-  if (record.expires_at && new Date(record.expires_at).getTime() <= now) return 'Expired';
   if (record.max_clicks != null && record.click_count >= record.max_clicks) return 'Click limit reached';
+  if (record.expires_at && new Date(record.expires_at).getTime() <= now) return 'Expired';
   return 'Active';
 }
 

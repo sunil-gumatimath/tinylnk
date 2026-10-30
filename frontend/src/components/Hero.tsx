@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { ArrowDownRight, ShieldCheck, Sparkles } from "lucide-react";
+import { SectionGridLines } from "./SectionGridLines";
 
 const fadeUp = {
 	hidden: { opacity: 0, y: 30 },
@@ -13,8 +14,9 @@ const fadeUp = {
 export function Hero() {
 	return (
 		<section className="hero-section" id="top">
-			<div className="hero-frame" aria-hidden="true" />
-			<div className="hero-copy">
+			<div className="hero-ambient-glow" aria-hidden="true" />
+			<SectionGridLines top={false} bottom={true} highlightCorner="tl" />
+			<div className="hero-copy section-container">
 				<motion.div
 					className="hero-badge"
 					custom={0}

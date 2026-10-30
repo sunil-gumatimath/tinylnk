@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
 	resolveExpiry,
 	normalizeUrl,
+	extractDomain,
 	isValidAlias,
 	linkStatus,
 	isReadableQr,
@@ -23,6 +24,14 @@ test('normalizeUrl prefixes https and rejects bad input', () => {
 	assert.throws(() => normalizeUrl('ftp://x.com'), /http/);
 	assert.throws(() => normalizeUrl('https://user:pass@x.com'), /sign-in/);
 	assert.throws(() => normalizeUrl('not a url'));
+});
+
+test('extractDomain extracts clean domain from URLs', () => {
+	assert.equal(extractDomain('https://www.example.com/path'), 'example.com');
+	assert.equal(extractDomain('http://sub.domain.org:8080/'), 'sub.domain.org');
+	assert.equal(extractDomain('example.com'), 'example.com');
+	assert.equal(extractDomain(''), '');
+	assert.equal(extractDomain(undefined), '');
 });
 
 test('linkStatus reflects backend 410 conditions', () => {
