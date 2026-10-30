@@ -83,6 +83,10 @@ def verify_clerk_token(token: str) -> str | None:
             algorithms=["RS256"],
             options={"verify_exp": True},
             issuer=expected_issuer,
+            # Tolerate small clock skew between us and Clerk; without it a
+            # host whose clock runs even a few seconds slow rejects every
+            # freshly issued token as "not yet valid (iat)".
+            leeway=60,
         )
         return payload.get("sub")
     except Exception as e:
