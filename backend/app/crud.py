@@ -298,8 +298,8 @@ def get_url_stats(
             }
         )
 
-    browser_stats = [{"name": k, "value": v} for k, v in browser_dict.items()]
-    os_stats = [{"name": k, "value": v} for k, v in os_dict.items()]
+    browser_stats = [{"name": k, "value": v} for k, v in browser_dict.most_common()]
+    os_stats = [{"name": k, "value": v} for k, v in os_dict.most_common()]
     referrer_stats = [{"name": k, "value": v} for k, v in referrer_dict.most_common()]
 
     return {
@@ -337,13 +337,15 @@ def export_stats_csv(
     writer.writerow(["clicked_at", "referrer", "browser", "os", "ip_address"])
 
     # Stream in batches so huge histories don't materialize as ORM objects.
+    ua_cache: dict[str | None, tuple[str, str]] = {}
     for click in query.order_by(models.ClickEvent.clicked_at.desc()).yield_per(1000):
-        browser = "Unknown"
-        os_name = "Unknown"
-        if click.user_agent:
-            ua = parse(click.user_agent)
-            browser = ua.browser.family
-            os_name = ua.os.family
+        if click.user_agent not in ua_cache:
+            if click.user_agent:
+                ua = parse(click.user_agent)
+                ua_cache[click.user_agent] = (ua.browser.family, ua.os.family)
+            else:
+                ua_cache[click.user_agent] = ("Unknown", "Unknown")
+        browser, os_name = ua_cache[click.user_agent]
 
         clicked_at = _ensure_utc(click.clicked_at)
         writer.writerow(

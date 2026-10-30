@@ -11,8 +11,41 @@ hermetically without a live Postgres. That escape hatch is ignored in every
 non-test process.
 """
 
+import json
 import os
+import socket
+import urllib.request
 from collections.abc import Generator
+
+# If the local network DNS resolver refuses queries for neon.tech, fallback to DoH.
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _fallback_getaddrinfo(host, port, *args, **kwargs):
+    try:
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
+    except socket.gaierror:
+        if isinstance(host, str) and (host.endswith(".neon.tech") or host == "neon.tech"):
+            try:
+                req = urllib.request.Request(
+                    f"https://1.1.1.1/dns-query?name={host}&type=A",
+                    headers={"Accept": "application/dns-json"},
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = json.loads(resp.read().decode())
+                    for ans in data.get("Answer", []):
+                        if ans.get("type") == 1 and "data" in ans:
+                            # Force family to AF_INET since we queried type A
+                            new_args = list(args)
+                            if new_args:
+                                new_args[0] = socket.AF_INET
+                            return _orig_getaddrinfo(ans["data"], port, *new_args, **kwargs)
+            except Exception:
+                pass
+        raise
+
+
+socket.getaddrinfo = _fallback_getaddrinfo
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
