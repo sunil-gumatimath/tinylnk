@@ -157,8 +157,8 @@ class TestCustomAlias:
         assert "taken" in response.json()["detail"].lower()
 
     def test_reserved_alias_rejection(self, client: TestClient):
-        """Reserved words (api, stats, docs, etc.) cannot be used as aliases."""
-        for alias in ["api", "stats", "docs", "assets", "recent", "shorten"]:
+        """Reserved words (api, stats, docs, redoc, __continue, etc.) cannot be used as aliases."""
+        for alias in ["api", "stats", "docs", "redoc", "__continue", "assets", "recent", "shorten"]:
             response = client.post(
                 "/api/shorten",
                 json={"url": f"https://example.com/{alias}", "custom_alias": alias},
@@ -283,40 +283,40 @@ class TestSelfReferencing:
     """Preventing users from shortening URLs that point back to the same
     tinylnk instance."""
 
-    def test_self_referencing_domain_blocked(self):
+    def test_self_referencing_domain_blocked(self, db_session):
         """When the base_url matches the target domain, the request should
         be rejected with a clear message."""
-        # Use a custom TestClient base_url so the domain has a dot (e.g.
-        # "example.com") to pass the early SSRF checks.
         from app.main import app
         client = TestClient(app, base_url="https://example.com")
-        # Override the database dependency for this client too
-        # We need a real session — import from conftest is tricky so we
-        # create a minimal inline one.
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-
-        from app.database import Base, get_db
-
-        engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/some-page"},
         )
-        Base.metadata.create_all(bind=engine)
-        test_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
-        app.dependency_overrides[get_db] = lambda: test_session
+        assert response.status_code == 400
+        detail = response.json()["detail"].lower()
+        assert "cannot shorten" in detail or "pointing to this domain" in detail
 
-        try:
-            response = client.post(
-                "/api/shorten",
-                json={"url": "https://example.com/some-page"},
-            )
-            assert response.status_code == 400
-            detail = response.json()["detail"].lower()
-            assert "cannot shorten" in detail or "pointing to this domain" in detail
-        finally:
-            app.dependency_overrides.clear()
-            test_session.close()
+    def test_self_referencing_different_scheme_blocked(self, db_session):
+        """Self-referencing domain is blocked even if scheme differs (http vs https)."""
+        from app.main import app
+        client = TestClient(app, base_url="https://example.com")
+        response = client.post(
+            "/api/shorten",
+            json={"url": "http://example.com/some-page"},
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"].lower()
+        assert "cannot shorten" in detail or "pointing to this domain" in detail
+
+    def test_matching_prefix_external_domain_allowed(self, db_session):
+        """A domain sharing prefix with base_url (e.g. example.com.attacker.org) is not blocked."""
+        from app.main import app
+        client = TestClient(app, base_url="https://example.com")
+        response = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com.attacker.org/some-page"},
+        )
+        assert response.status_code == 200
 
 
 class TestOptionalParameters:
@@ -567,6 +567,53 @@ class TestParameterValidation:
             headers=auth_headers,
         )
         assert response.status_code == 422
+
+    def test_update_rejects_self_referencing_domain(
+        self, auth_headers: dict
+    ):
+        """Updating an existing link to point to the shortener's own domain is blocked."""
+        from app.main import app
+        client = TestClient(app, base_url="https://example.com")
+        created = client.post(
+            "/api/shorten",
+            json={"url": "https://example.org/safe-init"},
+            headers=auth_headers,
+        )
+        code = created.json()["short_code"]
+        response = client.put(
+            f"/api/urls/{code}",
+            json={"original_url": "http://example.com/loop"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"].lower()
+        assert "cannot shorten" in detail or "pointing to this domain" in detail
+
+    def test_update_rejects_alias_colliding_with_existing_short_code(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """Updating custom_alias to match another link's generated short_code is rejected."""
+        link_a = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/target-a"},
+            headers=auth_headers,
+        ).json()
+        link_b = client.post(
+            "/api/shorten",
+            json={"url": "https://example.com/target-b"},
+            headers=auth_headers,
+        ).json()
+        code_a = link_a["short_code"]
+        code_b = link_b["short_code"]
+
+        response = client.put(
+            f"/api/urls/{code_b}",
+            json={"custom_alias": code_a},
+            headers=auth_headers,
+        )
+        assert response.status_code in (400, 409)
+        detail = response.json()["detail"].lower()
+        assert "already taken" in detail or "already exists" in detail
 
 
 class TestRecentSearchWildcardEscaping:

@@ -18,6 +18,7 @@ load_dotenv(os.path.join(_PROJECT_ROOT, ".env.local"))
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import qrcode
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -182,12 +183,14 @@ RESERVED_ALIASES = {
     "api",
     "assets",
     "docs",
+    "redoc",
     "openapi.json",
     "favicon.ico",
     "favicon.svg",
     "recent",
     "shorten",
     "stats",
+    "__continue",
 }
 
 
@@ -427,8 +430,9 @@ async def shorten_url(
             detail="This URL target is not allowed (internal or invalid address).",
         )
 
-    base_url = str(request.base_url).rstrip("/")
-    if url_str.startswith(base_url):
+    target_host = urlparse(url_str).hostname
+    server_host = request.url.hostname
+    if target_host and server_host and target_host.lower() == server_host.lower():
         raise HTTPException(
             status_code=400,
             detail="Cannot shorten URLs pointing to this domain.",
@@ -480,6 +484,13 @@ async def update_url_endpoint(
                 status_code=400,
                 detail="This URL target is not allowed.",
             )
+        target_host = urlparse(url_str).hostname
+        server_host = request.url.hostname
+        if target_host and server_host and target_host.lower() == server_host.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot shorten URLs pointing to this domain.",
+            )
 
     # Validate new alias if provided
     if update_data.custom_alias:
@@ -490,6 +501,9 @@ async def update_url_endpoint(
                 status_code=400,
                 detail="Invalid alias. Use 3-50 alphanumeric characters, hyphens, or underscores.",
             )
+        existing = crud.get_url_by_code(db, update_data.custom_alias)
+        if existing and existing.id != url.id:
+            raise HTTPException(status_code=409, detail="This alias is already taken.")
 
     try:
         updated = crud.update_url(db, url, update_data)

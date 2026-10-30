@@ -48,11 +48,23 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("169.254.0.0/16"),   # link-local / cloud metadata
+    ipaddress.ip_network("100.64.0.0/10"),    # carrier-grade NAT (shared address space)
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),          # IPv6 unique-local
     ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
 ]
+
+
+def _is_blocked_ip(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_reserved
+        or addr.is_link_local
+        or addr.is_multicast
+        or any(addr in net for net in _BLOCKED_NETWORKS)
+    )
 
 
 def is_safe_url(url: str) -> bool:
@@ -69,7 +81,7 @@ def is_safe_url(url: str) -> bool:
         # If hostname is a raw IP, check against blocked ranges
         try:
             addr = ipaddress.ip_address(hostname)
-            return not any(addr in net for net in _BLOCKED_NETWORKS)
+            return not _is_blocked_ip(addr)
         except ValueError:
             pass  # not a raw IP — it's a domain name
         # Block well-known internal hostnames
@@ -88,7 +100,7 @@ def is_safe_url(url: str) -> bool:
                     addr = ipaddress.ip_address(addr_str)
                 except ValueError:
                     return False
-                if any(addr in net for net in _BLOCKED_NETWORKS):
+                if _is_blocked_ip(addr):
                     return False
         return True
     except Exception:

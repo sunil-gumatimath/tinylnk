@@ -46,6 +46,10 @@ class TestSsrfIsSafeUrl:
     def test_169_254_blocked(self):
         assert is_safe_url("http://169.254.169.254/latest/meta-data/") is False
 
+    def test_cgnat_blocked(self):
+        """Carrier-grade NAT (100.64.0.0/10) is blocked."""
+        assert is_safe_url("http://100.64.0.1/admin") is False
+
     def test_localhost_hostname_blocked(self):
         """The hostname ``localhost`` is blocked regardless of resolution."""
         assert is_safe_url("http://localhost/path") is False
