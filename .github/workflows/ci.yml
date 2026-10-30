@@ -113,6 +113,8 @@ jobs:
             --name tinylnk-test \
             -p 8000:8000 \
             -e TINYLNK_ENABLE_DOCS=true \
+            -e TINYLNK_TESTING=1 \
+            -e DATABASE_URL=sqlite:////tmp/tinylnk.db \
             tinylnk:ci
 
           # Wait for the container to start, then check health

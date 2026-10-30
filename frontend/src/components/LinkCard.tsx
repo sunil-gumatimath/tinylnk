@@ -77,7 +77,7 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
           </a>
         </div>
         <div className="link-head-right">
-          <Tag bordered={false} className={`meta-tag status-tag ${statusClass}`}>
+          <Tag variant="filled" className={`meta-tag status-tag ${statusClass}`}>
             <span className="status-dot" aria-hidden />
             {status === 'Click limit reached' ? 'Limit reached' : status}
           </Tag>
@@ -108,7 +108,7 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
           {createdLabel}
         </span>
         {record.tag ? (
-          <Tag bordered={false} className="meta-tag tag-pill">
+          <Tag variant="filled" className="meta-tag tag-pill">
             <TagIcon size={11} />
             <span className="truncate-text tag-pill-text">{record.tag}</span>
           </Tag>

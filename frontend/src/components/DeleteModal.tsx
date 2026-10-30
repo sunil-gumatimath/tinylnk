@@ -48,7 +48,7 @@ export function DeleteModal({
         </Button>,
       ]}
       centered
-      destroyOnClose
+      destroyOnHidden
     >
       {error && (
         <Alert

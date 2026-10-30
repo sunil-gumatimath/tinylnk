@@ -54,7 +54,7 @@ export function EditModal({ open, loading, record, error, onSave, onClose }: Edi
     <Modal
       open={open}
       onCancel={onClose}
-      destroyOnClose
+      destroyOnHidden
       width={520}
       title={
         <div className="modal-title">
