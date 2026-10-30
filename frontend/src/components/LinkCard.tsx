@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Popconfirm, Tag, Tooltip } from 'antd';
+import { Button, Tag, Tooltip } from 'antd';
 import {
   BarChart2,
   Calendar,
@@ -24,7 +24,7 @@ interface LinkCardProps {
   onCopy: (text: string) => Promise<boolean>;
   onShowQr: (shortCode: string) => void;
   onShowStats: (shortCode: string, shortUrl: string) => void;
-  onDelete: (shortCode: string) => Promise<void>;
+  onDelete: (record: ShortenedURL) => void;
   onEdit: (record: ShortenedURL) => void;
   onShare: (shortUrl: string) => void;
 }
@@ -172,23 +172,16 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
               className="icon-btn"
             />
           </Tooltip>
-          <Popconfirm
-            title="Delete this link?"
-            description="The short link and its QR codes will stop working. Its analytics will be permanently deleted. This cannot be undone."
-            okText="Delete link"
-            okButtonProps={{ danger: true }}
-            cancelText="Cancel"
-            placement="topRight"
-            onConfirm={() => onDelete(record.short_code)}
-          >
+          <Tooltip title="Delete">
             <Button
               size="small"
               danger
+              onClick={() => onDelete(record)}
               icon={<Trash2 size={14} />}
               aria-label="Delete link"
               className="icon-btn"
             />
-          </Popconfirm>
+          </Tooltip>
         </div>
       </div>
     </article>

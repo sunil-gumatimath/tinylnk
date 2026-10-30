@@ -49,9 +49,8 @@ const cardVariants = {
 
 function App() {
 	const [form] = Form.useForm<ShortenFormValues>();
-	// Themed message API — the static `message.*` export cannot see the
-	// ConfigProvider theme and renders light toasts in dark mode.
-	const { message } = AntdApp.useApp();
+	// Themed message and modal API
+	const { message, modal } = AntdApp.useApp();
 	const [loading, setLoading] = useState(false);
 	const [tableLoading, setTableLoading] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
@@ -279,28 +278,39 @@ function App() {
 		setStatsModalVisible(true);
 	};
 
-	const handleDelete = async (shortCode: string) => {
+	const handleDelete = (record: ShortenedURL) => {
 		if (!isAuthed) return;
 
-		try {
-			const response = await fetch(`/api/urls/${shortCode}`, {
-				method: "DELETE",
-				headers: await authHeaders(),
-			});
+		const code = record.custom_alias || record.short_code;
+		modal.confirm({
+			title: "Delete this link?",
+			content: `Delete short link "${code}" pointing to "${record.original_url}"? Its analytics will be permanently deleted. This cannot be undone.`,
+			okText: "Delete link",
+			okButtonProps: { danger: true },
+			cancelText: "Cancel",
+			centered: true,
+			async onOk() {
+				try {
+					const response = await fetch(`/api/urls/${encodeURIComponent(code)}`, {
+						method: "DELETE",
+						headers: await authHeaders(),
+					});
 
-			if (!response.ok) {
-				const data = await response.json();
-				message.error(data.detail || "Could not delete the link. Please try again.");
-				return;
-			}
+					if (!response.ok) {
+						const data = await response.json().catch(() => null);
+						message.error(data?.detail || "Could not delete the link. Please try again.");
+						return;
+					}
 
-			message.success("Link deleted.");
-			setRecentLinks((prev) => prev.filter((l) => l.short_code !== shortCode));
-			setResult((prev) => (prev?.short_code === shortCode ? null : prev));
-		} catch (error) {
-			console.error("Failed to delete", error);
-			message.error("Could not delete the link. Check your connection and try again.");
-		}
+					message.success("Link deleted.");
+					setRecentLinks((prev) => prev.filter((l) => l.id !== record.id));
+					setResult((prev) => (prev?.id === record.id ? null : prev));
+				} catch (error) {
+					console.error("Failed to delete", error);
+					message.error("Could not delete the link. Check your connection and try again.");
+				}
+			},
+		});
 	};
 
 	const handleEdit = (record: ShortenedURL) => {
