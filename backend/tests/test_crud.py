@@ -87,6 +87,25 @@ class TestCreateShortUrl:
             assert url.short_code not in codes, f"Collision at iteration {i}"
             codes.add(url.short_code)
 
+    def test_short_code_generated_before_insertion(self, db_session: Session):
+        """short_code is populated directly and not inserted as an empty placeholder."""
+        from sqlalchemy import event
+
+        inserted_codes = []
+
+        @event.listens_for(models.URL, "before_insert")
+        def intercept_before_insert(mapper, connection, target):
+            inserted_codes.append(target.short_code)
+
+        try:
+            url_data = schemas.URLCreate(url="https://example.com/no-empty-placeholder")
+            url = crud.create_short_url(db_session, url_data)
+            assert "" not in inserted_codes
+            assert len(inserted_codes) == 1
+            assert inserted_codes[0] == url.short_code
+        finally:
+            event.remove(models.URL, "before_insert", intercept_before_insert)
+
 
 # ---------------------------------------------------------------------------
 # get_url_by_code
@@ -197,6 +216,23 @@ class TestUpdateUrl:
                 db_session,
                 url_a,
                 schemas.URLUpdate(custom_alias="alias-b"),
+            )
+
+    def test_update_alias_colliding_with_short_code_raises_value_error(self, db_session: Session):
+        """Updating custom_alias to match another URL's generated short_code raises ValueError."""
+        url_a = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/target-a"),
+        )
+        url_b = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/target-b"),
+        )
+        with pytest.raises(ValueError, match="already taken"):
+            crud.update_url(
+                db_session,
+                url_b,
+                schemas.URLUpdate(custom_alias=url_a.short_code),
             )
 
     def test_clear_expires_at_with_zero(self, db_session: Session):
@@ -365,6 +401,16 @@ class TestIsUrlExpired:
             schemas.URLCreate(url="https://example.com/past"),
         )
         url.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        db_session.commit()
+        assert crud.is_url_expired(url) is True
+
+    def test_max_clicks_reached_without_expiry_date(self, db_session: Session):
+        """A URL with no expires_at but max_clicks reached is considered expired/exhausted."""
+        url = crud.create_short_url(
+            db_session,
+            schemas.URLCreate(url="https://example.com/capped", max_clicks=5),
+        )
+        url.click_count = 5
         db_session.commit()
         assert crud.is_url_expired(url) is True
 

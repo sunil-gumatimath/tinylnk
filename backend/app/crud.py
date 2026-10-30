@@ -25,10 +25,13 @@ from . import models, schemas
 
 def get_url_by_code(db: Session, short_code: str) -> models.URL | None:
     """Look up a URL by its short code or custom alias (fresh from DB)."""
-    url = db.query(models.URL).filter(models.URL.short_code == short_code).first()
-    if not url:
-        url = db.query(models.URL).filter(models.URL.custom_alias == short_code).first()
-    return url
+    return (
+        db.query(models.URL)
+        .filter(
+            (models.URL.short_code == short_code) | (models.URL.custom_alias == short_code)
+        )
+        .first()
+    )
 
 
 def create_short_url(
@@ -45,17 +48,26 @@ def create_short_url(
     if url_data.expires_in_hours:
         expires_at = datetime.now(timezone.utc) + timedelta(hours=url_data.expires_in_hours)
 
-    # Validate custom_alias uniqueness upfront
+    # Validate custom_alias uniqueness upfront against both aliases and codes
     if url_data.custom_alias:
-        existing = (
-            db.query(models.URL).filter(models.URL.custom_alias == url_data.custom_alias).first()
-        )
+        existing = get_url_by_code(db, url_data.custom_alias)
         if existing:
             raise ValueError("This alias is already taken.")
 
+    # Generate a cryptographically random short code (collision-safe)
+    for _ in range(10):
+        code = secrets.token_urlsafe(6)
+        # Check aliases too, not just short codes: ``get_url_by_code`` resolves
+        # short_code and custom_alias, so a generated code equal to another
+        # link's alias would shadow that link.
+        if not get_url_by_code(db, code):
+            break
+    else:
+        raise RuntimeError("Failed to generate unique short code after 10 attempts")
+
     db_url = models.URL(
         original_url=str(url_data.url),
-        short_code="",  # Placeholder, will be set after flush
+        short_code=code,
         custom_alias=url_data.custom_alias,
         expires_at=expires_at,
         # ``or None`` mirrors update_url's normalization: even a programmatic
@@ -66,19 +78,6 @@ def create_short_url(
         owner_id=owner_id,
     )
     db.add(db_url)
-    db.flush()  # Get the auto-generated ID
-
-    # Generate a cryptographically random short code (collision-safe)
-    for _ in range(10):
-        code = secrets.token_urlsafe(6)
-        # Check aliases too, not just short codes: ``get_url_by_code`` resolves
-        # short_code before custom_alias, so a generated code equal to another
-        # link's alias would permanently shadow that link.
-        if not get_url_by_code(db, code):
-            db_url.short_code = code
-            break
-    else:
-        raise RuntimeError("Failed to generate unique short code after 10 attempts")
 
     try:
         db.commit()
@@ -106,9 +105,16 @@ def update_url(
         if not alias:
             url.custom_alias = None
         elif alias != url.custom_alias:
-            # Check uniqueness (skip if same as current)
-            existing = db.query(models.URL).filter(models.URL.custom_alias == alias).first()
-            if existing and existing.id != url.id:
+            # Check uniqueness against both custom aliases and generated short codes
+            existing = (
+                db.query(models.URL)
+                .filter(
+                    ((models.URL.custom_alias == alias) | (models.URL.short_code == alias))
+                    & (models.URL.id != url.id)
+                )
+                .first()
+            )
+            if existing:
                 raise ValueError("This alias is already taken.")
             url.custom_alias = alias
 
@@ -439,10 +445,10 @@ def resolve_owner(
 
 def is_url_expired(url: models.URL) -> bool:
     """Check if a URL has expired."""
-    if url.expires_at is None:
-        return False
     if url.max_clicks is not None and url.click_count >= url.max_clicks:
         return True
+    if url.expires_at is None:
+        return False
     expires_at = url.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
