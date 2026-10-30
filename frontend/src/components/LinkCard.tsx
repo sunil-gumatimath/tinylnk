@@ -176,7 +176,10 @@ export function LinkCard({ record, getShortUrl, onCopy, onShowQr, onShowStats, o
             <Button
               size="small"
               danger
-              onClick={() => onDelete(record)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(record);
+              }}
               icon={<Trash2 size={14} />}
               aria-label="Delete link"
               className="icon-btn"

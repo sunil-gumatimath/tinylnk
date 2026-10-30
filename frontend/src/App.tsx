@@ -22,6 +22,7 @@ import { CornerTicks } from "./components/CornerTicks";
 import { SectionGridLines } from "./components/SectionGridLines";
 import { LinkCard } from "./components/LinkCard";
 import { EditModal } from "./components/EditModal";
+import { DeleteModal } from "./components/DeleteModal";
 import { QrModal } from "./components/QrModal";
 import { ShortenerForm } from "./components/ShortenerForm";
 import { Logo } from "./components/Logo";
@@ -49,8 +50,8 @@ const cardVariants = {
 
 function App() {
 	const [form] = Form.useForm<ShortenFormValues>();
-	// Themed message and modal API
-	const { message, modal } = AntdApp.useApp();
+	// Themed message API
+	const { message } = AntdApp.useApp();
 	const [loading, setLoading] = useState(false);
 	const [tableLoading, setTableLoading] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
@@ -78,6 +79,10 @@ function App() {
 	const [editModalVisible, setEditModalVisible] = useState(false);
 	const [editLoading, setEditLoading] = useState(false);
 	const [editingRecord, setEditingRecord] = useState<ShortenedURL | null>(null);
+	const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+	const [deleteLoading, setDeleteLoading] = useState(false);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [deletingRecord, setDeletingRecord] = useState<ShortenedURL | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterTag, setFilterTag] = useState<string | null>(null);
 	const [availableTags, setAvailableTags] = useState<string[]>([]);
@@ -279,38 +284,45 @@ function App() {
 	};
 
 	const handleDelete = (record: ShortenedURL) => {
-		if (!isAuthed) return;
+		if (!isAuthed) {
+			message.warning("Please sign in to delete links.");
+			return;
+		}
+		setDeletingRecord(record);
+		setDeleteError(null);
+		setDeleteModalVisible(true);
+	};
 
-		const code = record.custom_alias || record.short_code;
-		modal.confirm({
-			title: "Delete this link?",
-			content: `Delete short link "${code}" pointing to "${record.original_url}"? Its analytics will be permanently deleted. This cannot be undone.`,
-			okText: "Delete link",
-			okButtonProps: { danger: true },
-			cancelText: "Cancel",
-			centered: true,
-			async onOk() {
-				try {
-					const response = await fetch(`/api/urls/${encodeURIComponent(code)}`, {
-						method: "DELETE",
-						headers: await authHeaders(),
-					});
+	const confirmDelete = async () => {
+		if (!deletingRecord || !isAuthed) return;
+		setDeleteLoading(true);
+		setDeleteError(null);
 
-					if (!response.ok) {
-						const data = await response.json().catch(() => null);
-						message.error(data?.detail || "Could not delete the link. Please try again.");
-						return;
-					}
+		try {
+			const code = deletingRecord.short_code;
+			const response = await fetch(`/api/urls/${encodeURIComponent(code)}`, {
+				method: "DELETE",
+				headers: await authHeaders(),
+			});
 
-					message.success("Link deleted.");
-					setRecentLinks((prev) => prev.filter((l) => l.id !== record.id));
-					setResult((prev) => (prev?.id === record.id ? null : prev));
-				} catch (error) {
-					console.error("Failed to delete", error);
-					message.error("Could not delete the link. Check your connection and try again.");
-				}
-			},
-		});
+			if (!response.ok) {
+				const data = await response.json().catch(() => null);
+				setDeleteError(data?.detail || "Could not delete the link. Please try again.");
+				return;
+			}
+
+			message.success("Link deleted.");
+			const deletedId = deletingRecord.id;
+			setRecentLinks((prev) => prev.filter((l) => l.id !== deletedId));
+			setResult((prev) => (prev?.id === deletedId ? null : prev));
+			setDeleteModalVisible(false);
+			setDeletingRecord(null);
+		} catch (error) {
+			console.error("Failed to delete", error);
+			setDeleteError("Could not delete the link. Check your connection and try again.");
+		} finally {
+			setDeleteLoading(false);
+		}
 	};
 
 	const handleEdit = (record: ShortenedURL) => {
@@ -363,6 +375,8 @@ function App() {
 			linksRequest.current?.abort();
 			setStatsModalVisible(false);
 			setEditModalVisible(false);
+			setDeleteModalVisible(false);
+			setDeletingRecord(null);
 			setLinksError(null);
 			setTableLoading(false);
 			setRecentLinks([]);
@@ -728,6 +742,19 @@ function App() {
 									setEditingRecord(null);
 								}}
 								onSave={handleEditSave}
+							/>
+
+							<DeleteModal
+								open={deleteModalVisible}
+								record={deletingRecord}
+								loading={deleteLoading}
+								error={deleteError}
+								onConfirm={confirmDelete}
+								onClose={() => {
+									if (deleteLoading) return;
+									setDeleteModalVisible(false);
+									setDeletingRecord(null);
+								}}
 							/>
 
 							<QrModal
